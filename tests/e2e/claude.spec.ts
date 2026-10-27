@@ -213,6 +213,8 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
     const json = JSON.stringify(summary, null, 2);
     // Belt and braces: never write a file that contains the key.
     if (!KEY || !json.includes(KEY)) writeFileSync(`${OUT}/summary.json`, json);
+    // A bot's Claude call may still be in flight through the route as the page closes.
+    if (RELAY) await host.context.unrouteAll({ behavior: 'ignoreErrors' });
     await closeAll(players);
   }
 });

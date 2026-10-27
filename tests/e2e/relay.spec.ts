@@ -167,6 +167,8 @@ test.describe('Claude relay @relay', () => {
       results.blockedOrigin = await blockedStatus.textContent();
     } finally {
       writeSummary('statuses', results);
+      // The game UI may still be loading assets through the route as the page closes.
+      await blocked.context.unrouteAll({ behavior: 'ignoreErrors' });
       await closeAll([host, blocked]);
     }
   });
