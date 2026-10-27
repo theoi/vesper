@@ -13,6 +13,9 @@ import {
   type Player,
 } from './support/harness.ts';
 
+// These tests intercept or count the page's requests, which a service worker would hide.
+const NO_SW = { serviceWorkers: 'block' } as const;
+
 // Real Claude through the browser path, on the live site. Needs ANTHROPIC_API_KEY
 // (and ANTHROPIC_WORKSPACE_ID for keys not scoped to a workspace). Run by
 // .github/workflows/claude-browser-e2e.yml. Never print the key: assertions on it
@@ -36,8 +39,8 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
   browser,
 }) => {
   test.setTimeout(15 * 60_000);
-  const host = await openPlayer(browser, 'Hana');
-  const friend = await openPlayer(browser, 'Ari');
+  const host = await openPlayer(browser, 'Hana', NO_SW);
+  const friend = await openPlayer(browser, 'Ari', NO_SW);
   const players: Player[] = [host, friend];
   const summary: Record<string, unknown> = { callCap: CALLS, relay: RELAY };
   try {

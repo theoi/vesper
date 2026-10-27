@@ -27,8 +27,16 @@ export function appUrl(params: Record<string, string> = {}): string {
   return all ? `./?${all}` : './';
 }
 
-export async function openPlayer(browser: Browser, name: string): Promise<Player> {
-  const context = await browser.newContext();
+/**
+ * `serviceWorkers: 'block'` for tests that intercept or count the page's
+ * requests: Playwright can't see requests a service worker handles.
+ */
+export async function openPlayer(
+  browser: Browser,
+  name: string,
+  opts: { serviceWorkers?: 'allow' | 'block' } = {},
+): Promise<Player> {
+  const context = await browser.newContext({ serviceWorkers: opts.serviceWorkers ?? 'allow' });
   await context.addInitScript(() => localStorage.setItem('vesper.netlog', '1'));
   const page = await context.newPage();
   const errors: string[] = [];

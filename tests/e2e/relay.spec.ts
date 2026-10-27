@@ -13,6 +13,9 @@ import {
   type Player,
 } from './support/harness.ts';
 
+// These tests intercept or count the page's requests, which a service worker would hide.
+const NO_SW = { serviceWorkers: 'block' } as const;
+
 // Claude through the host's own relay (relay/ in this repo). Run by
 // .github/workflows/claude-relay-e2e.yml against a relay started in CI or the
 // host's deployed one. Needs RELAY_URL and RELAY_PASSPHRASE; ANTHROPIC_API_KEY,
@@ -135,8 +138,8 @@ test.describe('Claude relay @relay', () => {
     baseURL,
   }) => {
     test.setTimeout(3 * 60_000);
-    const host = await openPlayer(browser, 'Hana');
-    const blocked = await openPlayer(browser, 'Bea');
+    const host = await openPlayer(browser, 'Hana', NO_SW);
+    const blocked = await openPlayer(browser, 'Bea', NO_SW);
     const results: Record<string, unknown> = {};
     try {
       await hostRoom(host, { online: false });
@@ -170,8 +173,8 @@ test.describe('Claude relay @relay', () => {
 
   test('a host plays with Claude bots through the relay and one friend', async ({ browser }) => {
     test.setTimeout(15 * 60_000);
-    const host = await openPlayer(browser, 'Hana');
-    const friend = await openPlayer(browser, 'Ari');
+    const host = await openPlayer(browser, 'Hana', NO_SW);
+    const friend = await openPlayer(browser, 'Ari', NO_SW);
     const players: Player[] = [host, friend];
     const summary: Record<string, unknown> = { callCap: CALLS, relayHost: new URL(RELAY).host };
     const relayHost = new URL(RELAY).host;

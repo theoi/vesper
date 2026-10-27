@@ -11,7 +11,9 @@ Multi-browser Playwright tests. `npm run e2e` builds and serves the site locally
 - `@claude`: real Claude bots through the browser on the live site (`claude.spec.ts`), run by the manual `claude-browser-e2e.yml` workflow.
 - `manual/hidden-host.mjs`: checks that the host's game loop keeps time while its tab is hidden (Chrome throttles hidden tabs). It drives Chromium over raw CDP because Playwright keeps every tab "visible"; usage is in the file header.
 
-`support/harness.ts` opens isolated browser contexts per player with network recording on, and reads back each page's received messages and the host's secrets for audits. UI hooks are listed in `src/app/README.md`.
+`asset-cache.spec.ts` (`@smoke`) checks that the service worker caches hashed files, serves them on reload, leaves pages to the network, and goes away with `?sw=0`.
+
+`support/harness.ts` opens isolated browser contexts per player with network recording on (pass `{ serviceWorkers: 'block' }` to `openPlayer` when a test intercepts or counts the page's requests, as the Claude and relay specs do, since Playwright can't see requests a service worker answers), and reads back each page's received messages and the host's secrets for audits. UI hooks are listed in `src/app/README.md`.
 
 `UI=v2` runs a suite against the new UI (`?ui=v2`); the harness fails if the page fell back to the shell. `UI=shell` pins the placeholder shell.
 
