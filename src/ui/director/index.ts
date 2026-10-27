@@ -202,7 +202,9 @@ class Director implements DirectorApi {
       case 'whisper':
         if (!playing) {
           s.thread(b.from, b.to);
-          this.cameo('whisper', b.from, b.to, 0);
+          // Your own whisper (sent or received) always shows; others wait their turn.
+          const mine = b.from === view.you.id || b.to === view.you.id;
+          this.cameo('whisper', b.from, b.to, mine ? 2 : 0, mine);
         }
         this.audio.cue('whisper', { pan: (s.pan(b.from) + s.pan(b.to)) / 2 });
         return;
