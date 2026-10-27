@@ -35,6 +35,11 @@ export interface PreviewConfig {
   gate(el: HTMLElement): void;
   /** How long a leaving scene stays mounted for its exit animation (ms). */
   exitMs?: number;
+  /**
+   * Load heavy assets (images) after the click. The gate shows combined progress of this and
+   * the score's samples, and the first scene starts once both are done.
+   */
+  preload?(onProgress: (fraction: number) => void): Promise<void>;
 }
 
 export interface Preview {
@@ -96,7 +101,7 @@ export function createPreview(cfg: PreviewConfig): Preview {
   const exitMs = cfg.exitMs ?? 900;
 
   const goto = (i: number) => {
-    if (!begun || scenes.length === 0) return;
+    if (!ready || scenes.length === 0) return;
     const n = scenes.length;
     i = ((i % n) + n) % n;
     leave?.();
@@ -140,16 +145,40 @@ export function createPreview(cfg: PreviewConfig): Preview {
   const gate = h('div', 'pv-gate');
   cfg.gate(gate);
   document.body.append(gate);
+  let ready = false;
   const begin = async () => {
     if (begun) return;
     begun = true;
-    gate.classList.add('pv-gone');
-    window.setTimeout(() => gate.remove(), 1600);
+    gate.classList.add('pv-loading');
+    const parts = { audio: 0, assets: cfg.preload ? 0 : 1 };
+    const report = () => {
+      const f = (parts.audio + parts.assets) / 2;
+      gate.style.setProperty('--pv-progress', f.toFixed(3));
+      const label = gate.querySelector('[data-progress]');
+      if (label) label.textContent = `${Math.round(f * 100)}%`;
+    };
     try {
-      await audio.begin();
+      await audio.begin((f) => {
+        parts.audio = f;
+        report();
+      });
     } catch (err) {
       console.warn('audio unavailable', err);
     }
+    const loading = Promise.all([
+      audio.ready.then(() => {
+        parts.audio = 1;
+        report();
+      }),
+      cfg.preload?.((f) => {
+        parts.assets = f;
+        report();
+      }),
+    ]).catch((err: unknown) => console.warn('some assets failed to load', err));
+    await Promise.race([loading, new Promise((r) => window.setTimeout(r, 25000))]);
+    ready = true;
+    gate.classList.add('pv-gone');
+    window.setTimeout(() => gate.remove(), 1600);
     const start = location.hash.slice(1) || params.get('scene') || '';
     const si = scenes.findIndex((s) => s.id === start);
     goto(si >= 0 ? si : 0);
@@ -285,6 +314,7 @@ export function createPreview(cfg: PreviewConfig): Preview {
       current: () => pv.current,
       level: () => audio.level(),
       audioState: () => audio.ctx?.state ?? 'none',
+      isReady: () => ready,
       async audioCheck(bedSeconds = 8, stingSeconds = 5) {
         const out: {
           kind: string;

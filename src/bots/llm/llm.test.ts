@@ -300,6 +300,16 @@ describe('prompts use only the speaking bot’s own view', () => {
     );
   });
 
+  it('describes the voice without the persona label, which the model took as a name', () => {
+    const view = viewFor(day2().state, 'p0');
+    const gremlin = line('accuse', 'gus is hiding something.', accuseGus.act, {
+      personality: 'gremlin',
+    });
+    const user = buildPrompt(view, gremlin, 160).user;
+    expect(user).toContain('Your voice: Chaotic and mischievous');
+    expect(user).not.toMatch(/gremlin/i);
+  });
+
   it('points out lines said to the bot since it last spoke', () => {
     const user = buildPrompt(viewFor(day2().state, 'p0'), accuseGus, 160).user;
     expect(user).toContain("Said to you since your last message: Bea: Ada, what's your role?");
@@ -691,6 +701,22 @@ describe('guardrails', () => {
     expect(checkReply('Rewritten: Gus is shady.', ctx('p0', accuseGus))).toBe('meta');
     expect(checkReply("Here's my line: Gus is shady.", ctx('p0', accuseGus))).toBe('meta');
     expect(checkReply('Gus is the Godfather, I swear.', ctx('p0', accuseGus))).toBe('foreign-role');
+    expect(
+      checkReply('Gus dodges everything. nicknames only: gus, you are next.', ctx('p0', accuseGus)),
+    ).toBe('meta');
+  });
+
+  it('pet names the draft does not use are rejected', () => {
+    expect(checkReply('Gus dodges everything, ducks.', ctx('p0', accuseGus))).toBe('pet-name');
+    expect(checkReply('Okay, pet, Gus is dodging.', ctx('p0', accuseGus))).toBe('pet-name');
+    expect(checkReply('Gus, my dear, explain yourself.', ctx('p0', accuseGus))).toBe('pet-name');
+    expect(checkReply('Gus keeps dodging the vote, I love it.', ctx('p0', accuseGus))).toBeNull();
+    const ducks = line('accuse', 'Gus is dodging, ducks.', {
+      kind: 'accuse',
+      target: 'p6',
+      confidence: 0.6,
+    });
+    expect(checkReply('Gus keeps dodging, ducks.', ctx('p0', ducks))).toBeNull();
   });
 
   it('the line must keep its target, role, and results', () => {
@@ -707,6 +733,9 @@ describe('guardrails', () => {
     expect(
       checkReply("I'm the Augur. Gus came back suspicious last night.", ctx('p0', claim)),
     ).toBeNull();
+    expect(
+      checkReply("I'm the Augur, and the lamps flickered when Gus walked past.", ctx('p0', claim)),
+    ).toBe('missing-result');
   });
 
   it('dragging in a player nobody mentioned is rejected; answering the asker is fine', () => {

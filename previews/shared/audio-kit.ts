@@ -28,6 +28,8 @@ export interface ScoreInstance {
 export interface Score {
   beds: readonly string[];
   stings: readonly string[];
+  /** Load and decode anything the score needs (samples) for this context before it plays. */
+  prepare?(ctx: Ctx, onProgress?: (fraction: number) => void): Promise<void>;
   create(ctx: Ctx, out: AudioNode): ScoreInstance;
 }
 
@@ -360,13 +362,21 @@ export class AudioDirector {
     this.muted = localStorage.getItem(MUTE_KEY) === '1';
   }
 
-  async begin(): Promise<void> {
+  /** Resolves once the score's samples are decoded (immediately for purely synthetic scores). */
+  ready: Promise<void> = Promise.resolve();
+
+  async begin(onProgress?: (fraction: number) => void): Promise<void> {
     if (this.ctx) {
       await this.ctx.resume();
       return;
     }
     const ctx = new AudioContext({ latencyHint: 'interactive' });
     this.ctx = ctx;
+    this.ready = this.score.prepare
+      ? this.score.prepare(ctx, onProgress).catch((err: unknown) => {
+          console.warn('some samples failed to load', err);
+        })
+      : Promise.resolve();
     const chain = masterChain(ctx);
     this.bus = chain.input;
     this.bedBus = ctx.createGain();
@@ -504,6 +514,7 @@ export async function renderOffline(score: Score, job: RenderJob): Promise<Audio
   const octx = new OfflineAudioContext(2, Math.ceil(job.seconds * sr), sr);
   const chain = masterChain(octx);
   chain.output.connect(octx.destination);
+  await score.prepare?.(octx);
   const inst = score.create(octx, chain.input);
   if (job.bed) {
     const g = octx.createGain();

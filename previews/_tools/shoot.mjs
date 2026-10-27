@@ -1,6 +1,7 @@
 // Capture every scene of every preview and verify audio, using the system Chrome.
 //
 //   node previews/_tools/shoot.mjs <baseUrl> <outDir> [slug ...] [--audio] [--hide-ui] [--wav]
+//   VIEWPORT=390x844 node previews/_tools/shoot.mjs ...   (default 1600x900)
 //
 // <baseUrl> is the site root, e.g. http://localhost:4173/vesper/ or https://theoi.github.io/vesper/.
 // Prints a JSON report: console errors, live output level per shot, and (with --audio)
@@ -31,7 +32,8 @@ const browser = await chromium.launch({
 
 const report = [];
 for (const slug of slugs) {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const [width, height] = (process.env.VIEWPORT ?? '1600x900').split('x').map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   const errors = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
@@ -49,6 +51,7 @@ for (const slug of slugs) {
   await page.waitForTimeout(1200);
   await page.screenshot({ path: join(outDir, `${slug}-gate.png`), timeout: 120000 });
   await page.click('.pv-gate');
+  await page.waitForFunction(() => window.__preview.isReady?.() ?? true, null, { timeout: 60000 });
   await page.waitForTimeout(600);
   if (flags.has('--hide-ui')) await page.evaluate(() => document.body.classList.add('pv-no-rail'));
   const scenes = await page.evaluate(() => window.__preview.scenes);
