@@ -20,6 +20,7 @@ Player-facing words for engine terms (`labels.ts`), for feed lines, cards, and t
 | `OUTCOME_HEADLINE`, `RESULT_REASON`, `resultLine(result)` | `Record<…, string>`, `string`          | The curtain-call headline ("The Town prevails"), the reason as a sentence, and both as one line: "The Town prevails: every threat to the town is gone." |
 | `SAVED_BY`                                                | `Record<savedBy, string>`              | Why a player survived an attack, after "You were attacked, but".                                                                                        |
 | `NIGHT_OUTCOME`                                           | `Record<NightOutcome, string>`         | A short label for how one night ability turned out ("stopped by a Sentinel").                                                                           |
+| `NIGHT_VERB`                                              | `Record<NightActionKind, string>`      | The verb for each night ability: "Rook wants to kill Bram", and "mark" for a frame.                                                                     |
 
 Role and faction names, goals, and flavor lines come from `src/engine/roles.ts`. The copy here refers to them with tokens (`{augur}`, `{mafia}`), so renaming a role in the engine renames it everywhere. When restyling, edit the names and flavor in `roles.ts`, and the wording here.
 
