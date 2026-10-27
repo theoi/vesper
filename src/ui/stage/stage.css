@@ -344,6 +344,32 @@
   text-shadow: 0 1px 2px #000;
 }
 
+/* A narrow stage with a big cast: names alternate between two lines so each has room. */
+@container (max-width: 720px) {
+  .vs-candles.crowd {
+    left: 3%;
+    right: 3%;
+  }
+
+  .vs-candles.crowd .vs-tag {
+    visibility: hidden;
+  }
+
+  .vs-candles.crowd .vs-name {
+    max-width: 190%;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .vs-candles.crowd .vs-candle:nth-child(even) .vs-name {
+    order: 1;
+  }
+
+  .vs-candles.crowd .vs-candle:nth-child(even) .vs-votes {
+    order: 2;
+  }
+}
+
 .vs-tag {
   min-height: 1.2em;
   max-width: 100%;
@@ -1039,8 +1065,8 @@
   }
 }
 
-/* While a sequence plays. */
-.vs-stage.playing::after {
+/* While a sequence plays (not under the curtain call). */
+.vs-stage.playing:not([data-phase='ended'])::after {
   content: 'Click or press Esc to skip';
   position: absolute;
   right: 14px;

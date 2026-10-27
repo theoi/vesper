@@ -252,6 +252,7 @@ class ScrimStage implements Stage {
     });
     for (const m of keep.values()) m.shade.el.remove();
     this.candles.style.setProperty('--n', String(n));
+    this.candles.classList.toggle('crowd', n >= 7);
     this.castKey = key;
   }
 
