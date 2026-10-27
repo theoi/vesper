@@ -2,7 +2,7 @@ import './stage.css';
 import { nameOf } from '../../app/format.ts';
 import { ROLES, type NightActionKind, type PlayerId, type PlayerView } from '../../engine/index.ts';
 import type { GameAudio, LobbySeat, PickMode, StageApi } from '../contracts.ts';
-import { allArtUrls, castFaces, type Act, type Face } from './art.ts';
+import { allArtUrls, castFaces, HAND, type Act, type Face } from './art.ts';
 import { Cloth, type Look } from './cloth.ts';
 import { Film, type Tone } from './film.ts';
 import { closeup, type Close } from './portrait.ts';
@@ -70,6 +70,8 @@ export interface Stage extends StageApi {
   setLit(id: PlayerId, lit: boolean): void;
   /** Paint every candle from the current view again. */
   repaint(): void;
+  /** The Mourner's hand reaches through the cloth and stays while the Mourner speaks. */
+  hand(words: string): void;
   /** The trial inset: a close-up of the defendant beside the cloth. */
   inset(): Close | null;
   clearOver(): void;
@@ -133,6 +135,8 @@ class ScrimStage implements Stage {
   private extras = new Set<Shade>();
   private raf = 0;
   private lastPhase = '';
+  private handEl: HTMLElement | null = null;
+  private handTimer = 0;
   reduced = false;
   view: PlayerView | null = null;
 
@@ -301,6 +305,7 @@ class ScrimStage implements Stage {
     this.candles.dataset.testid = 'players';
     this.el.dataset.phase = view.phase.kind;
     this.paintCandles(view);
+    if (view.phase.kind !== 'night') this.dropHand();
     const phaseKey = `${view.phase.kind}:${view.phase.day}`;
     const changed = phaseKey !== this.lastPhase;
     this.lastPhase = phaseKey;
@@ -722,6 +727,61 @@ class ScrimStage implements Stage {
     if (this.view) this.paintCandles(this.view);
   }
 
+  hand(words: string): void {
+    const view = this.view;
+    let el = this.handEl;
+    if (!el) {
+      el = div('vs-hand');
+      // The dead see it over the séance; the Mourner sees their own hand at their mark.
+      const x = view && view.you.alive ? this.markOf(view.you.id) : 50;
+      el.style.left = `${Math.min(80, Math.max(20, x))}%`;
+      for (const k of ['reach', 'press'] as const) {
+        const img = document.createElement('img');
+        img.className = `vs-hand-${k}`;
+        img.src = HAND[k];
+        img.alt = '';
+        img.draggable = false;
+        el.append(img);
+      }
+      el.append(div('vs-hand-words'));
+      this.shadows.append(el);
+      this.handEl = el;
+      const held = el;
+      requestAnimationFrame(() => {
+        held.classList.add('near');
+        window.setTimeout(() => held.classList.add('touch'), this.reduced ? 0 : 900);
+      });
+      this.audio.cue('whisper', { gain: 0.7 });
+    } else {
+      el.classList.remove('pulse');
+      void el.offsetWidth;
+      el.classList.add('pulse');
+    }
+    const line = el.querySelector('.vs-hand-words');
+    if (line) {
+      const text = words.trim();
+      line.textContent = text.length > 140 ? `${text.slice(0, 139)}…` : text;
+      line.classList.remove('on');
+      void (line as HTMLElement).offsetWidth;
+      line.classList.add('on');
+    }
+    window.clearTimeout(this.handTimer);
+    this.handTimer = window.setTimeout(
+      () => this.dropHand(),
+      5000 + Math.min(4000, words.length * 40),
+    );
+  }
+
+  private dropHand(): void {
+    window.clearTimeout(this.handTimer);
+    const el = this.handEl;
+    if (!el) return;
+    this.handEl = null;
+    el.classList.remove('touch', 'pulse');
+    el.classList.add('away');
+    window.setTimeout(() => el.remove(), 1200);
+  }
+
   clearOver(): void {
     for (const el of [...this.over.children]) if (!el.classList.contains('linger')) el.remove();
     for (const li of this.candles.children) li.classList.remove('dimmed');
@@ -769,6 +829,7 @@ class ScrimStage implements Stage {
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
+    window.clearTimeout(this.handTimer);
     for (const t of this.walkTimers.values()) window.clearTimeout(t);
     this.insetClose?.c.p.dispose();
     this.film.dispose();

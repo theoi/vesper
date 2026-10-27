@@ -60,6 +60,9 @@ existing artworks as inputs), then resized and converted to WebP with ffmpeg.
   text prompts for solid black full-body silhouettes on white (aiming a pistol, a deep bow, carrying
   a candle, hooded in a cloak, creeping, guarding a doorway, tending a patient, knocking, lunging,
   sitting, struggling, walking), converted to transparent cut-outs.
+- **The Mourner's hand** (`src/ui/assets/hand/`): two text prompts for a solid black hand
+  silhouette on white, one pressed flat with the palm forward and one reaching with the fingers
+  curled, converted to transparent cut-outs.
 
 ## Recorded samples (`src/audio/samples/`, shared by the game and the previews)
 

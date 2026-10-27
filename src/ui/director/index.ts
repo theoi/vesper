@@ -182,6 +182,9 @@ class Director implements DirectorApi {
         }
         this.audio.cue('creep', { pan: s.pan(view.you.id), gain: 0.7 });
         return;
+      case 'mourner':
+        s.hand(b.text);
+        return;
     }
   }
 

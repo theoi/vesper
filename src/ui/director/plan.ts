@@ -77,7 +77,9 @@ export type Beat =
   | { type: 'vote'; voter: PlayerId; target: PlayerId | null }
   | { type: 'ballot'; voter: PlayerId }
   | { type: 'votingOpen'; need: number }
-  | { type: 'night' };
+  | { type: 'night' }
+  /** The Mourner speaks to the dead: the dead see it as "the Mourner", the Mourner as their own line. */
+  | { type: 'mourner'; text: string };
 
 export type Step = { kind: 'beat'; beat: Beat } | { kind: 'seq'; seq: SeqSpec };
 
@@ -288,6 +290,12 @@ export function plan(events: readonly GameEvent[], view: PlayerView, memo: Memo)
       case 'chat':
         if (e.channel === 'public' && e.from)
           beat({ type: 'speak', who: e.from, text: e.text, act: actOf(e, view) });
+        else if (
+          e.channel === 'dead' &&
+          e.phase === 'night' &&
+          (e.from === null || (e.from === view.you.id && view.you.role === 'mourner'))
+        )
+          beat({ type: 'mourner', text: e.text });
         break;
       case 'whisperNotice':
         beat({ type: 'whisper', from: e.from, to: e.to });
