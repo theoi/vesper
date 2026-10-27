@@ -149,4 +149,26 @@ describe('plan', () => {
       { id: 'deal', tone: 'mafia', role: 'hatchet', teammates: ['d'], changed: false },
     ]);
   });
+
+  it("reaches the Mourner's hand through the cloth only for the Mourner's night lines", () => {
+    const beats = (steps: ReturnType<typeof plan>) =>
+      steps.flatMap((s) => (s.kind === 'beat' ? [s.beat] : []));
+    const line = (from: string | null, phase: 'night' | 'discussion' = 'night') =>
+      ({
+        ...ev({ type: 'chat', channel: 'dead', from, text: 'who came?', fromLabel: 'the Mourner' }),
+        phase,
+      }) as GameEvent;
+    const dead = view({ you: { id: 'a', faction: 'town', alive: false, role: 'augur' } } as never);
+    expect(beats(plan([line(null)], dead, newMemo('k')))).toEqual([
+      { type: 'mourner', text: 'who came?' },
+    ]);
+    expect(beats(plan([line('b')], dead, newMemo('k')))).toEqual([]);
+    expect(beats(plan([line(null, 'discussion')], dead, newMemo('k')))).toEqual([]);
+    const mourner = view({
+      you: { id: 'a', faction: 'town', alive: true, role: 'mourner' },
+    } as never);
+    expect(beats(plan([line('a')], mourner, newMemo('k')))).toEqual([
+      { type: 'mourner', text: 'who came?' },
+    ]);
+  });
 });

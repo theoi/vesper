@@ -6,6 +6,12 @@ const POSE_URLS = byName(
 const FACE_URLS = byName(
   import.meta.glob('../assets/faces/*.webp', { eager: true, query: '?url', import: 'default' }),
 );
+const HAND_URLS = byName(
+  import.meta.glob('../assets/hand/*.webp', { eager: true, query: '?url', import: 'default' }),
+);
+
+/** The Mourner's hand: reaching (far behind the cloth) and pressed flat against it. */
+export const HAND = { reach: HAND_URLS.reach ?? '', press: HAND_URLS.press ?? '' };
 
 function byName(files: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -186,7 +192,7 @@ export function faceUrl(id: string, x: Expression): string {
 
 /** Every art URL, for warming the cache while the lobby fills. */
 export function allArtUrls(): string[] {
-  return [...Object.values(POSE_URLS), ...Object.values(FACE_URLS)];
+  return [...Object.values(POSE_URLS), ...Object.values(FACE_URLS), ...Object.values(HAND_URLS)];
 }
 
 /** Small string hash (FNV-1a) for seeding. */

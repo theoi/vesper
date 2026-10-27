@@ -68,7 +68,9 @@ interface Scene {
   group: string;
   label: string;
   view: () => PlayerView;
-  spec: SeqSpec;
+  spec?: SeqSpec;
+  /** A scene driven by stage calls rather than a sequence (a beat, like the Mourner's hand). */
+  run?: (t: Take) => Promise<void>;
 }
 
 const SCENES: Scene[] = [
@@ -384,6 +386,17 @@ const SCENES: Scene[] = [
     spec: { id: 'finale', outcome: 'draw', won: false },
   },
   {
+    group: 'Night',
+    label: "The Mourner's hand",
+    view: () => viewAt('night', { dead: ['p0', 'p2', 'p5', 'p7'], you: { alive: false } }),
+    run: async (t) => {
+      stage.hand('Who came to your door?');
+      await t.wait(3200);
+      stage.hand('Tell me and I will carry it into the light.');
+      await t.wait(6500);
+    },
+  },
+  {
     group: 'Curtain call',
     label: 'What really happened',
     view: () =>
@@ -457,7 +470,8 @@ async function play(i: number): Promise<void> {
   take = t;
   stage.hold(true);
   try {
-    await runSequence(t, stage, audio, scene.spec);
+    if (scene.run) await scene.run(t);
+    else if (scene.spec) await runSequence(t, stage, audio, scene.spec);
   } catch (e) {
     if (!(e instanceof Skip)) console.error(e);
   } finally {
