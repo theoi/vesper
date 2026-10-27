@@ -40,4 +40,4 @@ Any `index.html` under `previews/` or `labs/` is built automatically and served 
 
 ## Deployment
 
-Every push to `main` builds the site and deploys it to GitHub Pages through `.github/workflows/deploy.yml`. Pull requests run typecheck, lint, unit tests, a build, and an e2e smoke test.
+Every push to `main` builds the site and publishes it to the `gh-pages` branch, which GitHub Pages serves, through `.github/workflows/deploy.yml`. Pull requests run typecheck, lint, unit tests, a build, and an e2e smoke test.
