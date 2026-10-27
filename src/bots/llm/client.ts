@@ -31,6 +31,7 @@ export interface CallRequest {
 
 export type CallErrorKind =
   | 'invalid-key' // 401, or a key without permission
+  | 'browser-blocked' // the key's organization refuses browser (CORS) requests
   | 'workspace' // key needs an anthropic-workspace-id header
   | 'rate-limited' // 429 with a retry time
   | 'spend-limit' // the account's spend or usage limit is reached
@@ -103,11 +104,16 @@ interface ApiErrorBody {
   error?: { type?: string; message?: string; details?: { error_code?: string } };
 }
 
+/** Organizations with custom data retention reject browser requests with a 401 that says so. */
+const BROWSER_BLOCKED = /\bCORS requests are not allowed\b|\bcustom (?:data )?retention\b/i;
+
 function classify(res: Response, body: ApiErrorBody, now: number): CallError {
   const status = res.status;
   const type = body.error?.type ?? '';
   const raw = body.error?.message ?? '';
   const message = `${status} ${type}${raw ? `: ${raw.slice(0, 160)}` : ''}`.trim();
+  if (status >= 400 && status < 500 && status !== 429 && BROWSER_BLOCKED.test(raw))
+    return { kind: 'browser-blocked', status, message };
   if (status === 401) return { kind: 'invalid-key', status, message };
   if (status === 403) return { kind: 'invalid-key', status, message };
   if (status === 429) {

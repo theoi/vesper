@@ -43,7 +43,7 @@ Each `BotSpeech` carries `intent` (scripted text, ready to apply), `act` (a `Spe
 import { ChatLayer, loadSettings, saveSettings, voiceSpeech } from '../bots/llm/index.ts';
 
 const chat = new ChatLayer(loadSettings(localStorage)); // key, model, on/off
-chat.subscribe((s) => showClaudeStatus(s.state, s.detail)); // off | ok | invalid-key | rate-limited | degraded
+chat.subscribe((s) => showClaudeStatus(s.state, s.detail)); // off | ok | invalid-key | browser-blocked | rate-limited | degraded
 chat.configure({ apiKey, model: 'claude-haiku-5-5', enabled: true }); // from the settings screen
 saveSettings(localStorage, { apiKey, model }, rememberKey); // the key is stored only if the host asks
 await chat.check(); // optional "Test key" button: one tiny request
@@ -57,7 +57,7 @@ applyIntent(state, bot.id, speech.intent, Date.now()); // drop it if the engine 
 ```
 
 - **Never breaks the game.** `rewrite` always resolves. Without a key, with a bad key, on a rate limit, timeout (4 s by default, queueing included), network or server error, refusal, spent budget, or guardrail rejection, it returns the scripted text and a `reason`.
-- **Status.** 401/403 or a key that needs a workspace → `invalid-key` and no more calls until the key changes. 429 → `rate-limited` until `retry-after`. A spend limit or a missing model → `degraded` with a plain explanation. Three failures in a row → `degraded`; five → a 30 s cool-down. A success returns to `ok`.
+- **Status.** 401/403 or a key that needs a workspace → `invalid-key` and no more calls until the key changes. A 401 saying the key's organization refuses browser (CORS) requests, which Anthropic does for organizations with custom data retention, → `browser-blocked`, with the same stop. 429 → `rate-limited` until `retry-after`. A spend limit or a missing model → `degraded` with a plain explanation. Three failures in a row → `degraded`; five → a 30 s cool-down. A success returns to `ok`.
 - **Limits.** 300 calls per game (a long 9-player game uses about 225; about $0.04 at Haiku prices), 3 in flight, 45 per minute. Low-value lines (greetings, banter) are skipped first when the budget or rate runs low.
 - **Prompt.** A static system prompt (game rules, this game's role names, style rules; cached by the API) plus a per-line message built only from the bot's own `PlayerView`: persona and quirks, its role, partners if Syndicate, its own night results, its public story, the public situation and claims, the last 14 chat lines and events it can see, the line's purpose (from the act), and the scripted draft. Player chat is wrapped in `<chat>` and flattened so it cannot pose as instructions.
 - **Guardrails** (`guard.ts`). Replies are cleaned (first line, no labels, quotes, markdown, stage directions, emojis; cut at a sentence end under 160 characters) and rejected when they drop the act's target, role, or results; name players nobody mentioned; point accusations somewhere new; name a living Syndicate partner or hint at the team in public; claim a role the line does not claim; admit to being Syndicate; mention AI, prompts, or drafts; use another game's role names; or out the Mourner in the dead chat.
