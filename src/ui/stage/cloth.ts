@@ -14,6 +14,7 @@ uniform vec3 uGlow;
 uniform float uFloor;
 uniform float uFog;
 uniform float uFlash;
+uniform float uWeave;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -46,7 +47,7 @@ void main() {
   float warp = 0.5 + 0.5 * sin(px.x * 1.75 + vnoise(vec2(px.x * 0.02, px.y * 0.004)) * 3.0);
   float weft = 0.5 + 0.5 * sin(px.y * 1.75 + vnoise(vec2(px.x * 0.004, px.y * 0.02)) * 3.0);
   float slub = vnoise(vec2(px.x * 0.004, px.y * 0.4)) * vnoise(vec2(px.x * 0.4, px.y * 0.004));
-  float weave = warp * weft - 0.25 + (slub - 0.25) * 0.5;
+  float weave = (warp * weft - 0.25 + (slub - 0.25) * 0.5) * uWeave;
 
   vec2 hp = vec2(uHot.x * a, uHot.y);
   vec2 dv = (p - hp) * vec2(1.0, 1.25);
@@ -95,6 +96,9 @@ void main() {
   gl_FragColor = vec4(max(col, 0.0), 1.0);
 }
 `;
+
+/** Renderer names that mean WebGL is running on the CPU. */
+const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softpipe|software|basic render|mesa offscreen/i;
 
 export interface Light {
   lamp: number;
@@ -324,8 +328,18 @@ export class Cloth {
     flash: 0,
   };
   private tweens = new Map<LightKey, Tween>();
+  private dirty = true;
   /** Reduced motion: the lamp holds steady and flashes are softened. */
   calm = false;
+  /**
+   * Software rendering (no GPU): the browser reads every WebGL frame back on the main thread,
+   * so the cloth draws fewer pixels, holds still between changes, and eases at a lower rate.
+   */
+  lite = false;
+  /** The WebGL renderer, as the driver reports it. */
+  renderer = '';
+  /** Called when the cloth needs a new frame. */
+  onChange: () => void = () => {};
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -342,6 +356,11 @@ export class Cloth {
       powerPreference: 'high-performance',
     });
     if (!gl) return false;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    this.renderer = String(
+      gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '',
+    );
+    this.lite = SOFTWARE.test(this.renderer);
     const compile = (type: number, src: string) => {
       const s = gl.createShader(type);
       if (!s) return null;
@@ -396,6 +415,26 @@ export class Cloth {
         this.tweens.delete(k);
       } else this.tweens.set(k, { from: this.value[k], to: v, t0: now, ms });
     }
+    this.touch();
+  }
+
+  /** Something changed (a value, the size, a mode): draw again. */
+  touch(): void {
+    this.dirty = true;
+    this.onChange();
+  }
+
+  /** Whether the cloth changes by itself right now: easing, a flash, flicker or drifting fog. */
+  private moving(): boolean {
+    if (this.tweens.size) return true;
+    if (this.calm || this.lite) return false;
+    const v = this.value;
+    return v.flicker > 0.01 || v.fog > 0.01;
+  }
+
+  /** Whether another frame is needed. */
+  wantsFrame(): boolean {
+    return this.dirty || this.moving();
   }
 
   look(name: Look, ms: number, extra: Partial<Light> = {}): void {
@@ -406,6 +445,7 @@ export class Cloth {
   flash(amount: number, ms = 420): void {
     this.value.flash = amount;
     this.tweens.set('flash', { from: amount, to: 0, t0: performance.now(), ms });
+    this.touch();
   }
 
   private step(now: number): void {
@@ -417,10 +457,13 @@ export class Cloth {
     }
   }
 
-  render(now: number, scale: number): void {
+  /** Draw a frame if one is needed. Returns whether it drew. */
+  render(now: number, scale: number): boolean {
+    if (!this.wantsFrame()) return false;
+    this.dirty = false;
     this.step(now);
     const gl = this.gl;
-    if (!gl) return;
+    if (!gl) return false;
     const c = this.canvas;
     const dpr = Math.min(window.devicePixelRatio || 1, 1.25) * scale;
     const w = Math.max(1, Math.round(c.clientWidth * dpr));
@@ -432,7 +475,8 @@ export class Cloth {
     const v = this.value;
     gl.viewport(0, 0, w, h);
     gl.uniform2f(this.uni('uRes'), w, h);
-    gl.uniform1f(this.uni('uTime'), now / 1000);
+    // A cloth that holds still between changes also holds its grain and fog still.
+    gl.uniform1f(this.uni('uTime'), this.calm || this.lite ? 7.3 : now / 1000);
     gl.uniform1f(this.uni('uLamp'), v.lamp);
     gl.uniform3f(this.uni('uHot'), v.hx, v.hy, v.hr);
     gl.uniform1f(this.uni('uCold'), v.cold);
@@ -443,7 +487,10 @@ export class Cloth {
     gl.uniform1f(this.uni('uFloor'), this.floor);
     gl.uniform1f(this.uni('uFog'), v.fog);
     gl.uniform1f(this.uni('uFlash'), this.calm ? v.flash * 0.25 : v.flash);
+    // At the lite cloth's low resolution the weave would magnify into a coarse grid.
+    gl.uniform1f(this.uni('uWeave'), this.lite ? 0.3 : 1);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    return true;
   }
 
   dispose(): void {
