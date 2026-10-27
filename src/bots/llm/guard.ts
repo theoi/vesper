@@ -42,7 +42,7 @@ const SLIP =
   /\b(teammates?|my (?:team|partners?|crew|boss|patron|hatchet|family)|our (?:team|crew|kill|target|boss|patron|hatchet|plan|family)|fellow syndicate|we (?:will |'ll |’ll )?(?:kill|killed|hit|take out|pick)\b)/i;
 
 const ACCUSING =
-  /\b(sus|suss|suspicious|suspect|syndicate|mafia|scum|evil|liar|lying|lies|guilty|killer|hostile|fake|shady|lynch|hang|execute)\b/i;
+  /\b(sus|suss|suspicious|suspect|syndicate|mafia|scum|evil|liar|lying|lies|guilty|killer|hostile|fake|shady|lynch|hang|execute|villain|culprit|wolf|chase|chasing|blame)\b/i;
 
 const SELF_INCRIMINATE =
   /\b(?:i am|i'm|i’m|im|we are|we're|we’re)\s+(?:the\s+|a\s+|in the\s+)?(?:syndicate|mafia|killer|murderer|evil|scum)\b/i;
@@ -182,13 +182,15 @@ export function checkReply(text: string, ctx: GuardContext): GuardRule | null {
   for (const line of recentLines(view, channel, 8))
     for (const id of mentioned(line, view)) context.add(id);
   if (view.trial) context.add(view.trial.defendant);
+  // The Mourner may overhear the dead chat, so dead Syndicate keep quiet about partners too.
+  const hidePartners = open || channel === 'dead';
   for (const id of inText) {
     if (inDraft.has(id) || actIds.has(id)) continue;
-    if (open && livingMates.has(id)) return 'teammate-named';
+    if (hidePartners && livingMates.has(id)) return 'teammate-named';
     if (!context.has(id)) return 'new-name';
   }
-  // Accusations (and Suspicious results) may only point where the draft points.
-  for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
+  // In the open, accusations (and Suspicious results) may only point where the draft points.
+  for (const sentence of open ? text.split(/(?<=[.!?…])\s+/) : []) {
     if (!ACCUSING.test(sentence)) continue;
     for (const p of view.players) {
       if (inDraft.has(p.id) || actIds.has(p.id) || !mentionsName(sentence, p.name)) continue;

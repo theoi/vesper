@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { act, pinnedGame, runNight, start, until, type Driver } from '../../engine/testkit.ts';
+import {
+  act,
+  judge,
+  pinnedGame,
+  putOnTrial,
+  runNight,
+  start,
+  until,
+  type Driver,
+} from '../../engine/testkit.ts';
 import type { PlayerId, RoleId, SpeechAct } from '../../engine/types.ts';
 import { viewFor } from '../../engine/view.ts';
 import type { BotSpeech } from '../types.ts';
@@ -37,6 +46,33 @@ function day2(): Driver {
   d = until(d, 'discussion', 2);
   d = act(d, 'p1', { type: 'chat', channel: 'public', text: "Ada, what's your role?" });
   return d;
+}
+
+/** Gus (the Hatchet) executed on day 2, as a dead, revealed Syndicate partner. */
+function killGus(d: Driver): Driver {
+  return {
+    ...d,
+    state: {
+      ...d.state,
+      players: d.state.players.map((p) =>
+        p.id === 'p6'
+          ? {
+              ...p,
+              alive: false,
+              death: {
+                day: 2,
+                time: 'day' as const,
+                causes: ['executed' as const],
+                embalmed: false,
+                deathNotes: [],
+                role: 'hatchet' as const,
+                will: '',
+              },
+            }
+          : p,
+      ),
+    },
+  };
 }
 
 function line(
@@ -165,6 +201,15 @@ describe('request contract', () => {
     expect(c.body).not.toHaveProperty('thinking');
   });
 
+  it('rewriteText matches the host hook: Claude text, or null for the script', async () => {
+    const m = mock(() => okReply('Gus, answer me.'));
+    const view = viewFor(day2().state, 'p0');
+    const on = new ChatLayer({ apiKey: KEY, fetch: m.fetch });
+    expect(await on.rewriteText({ view, speech: accuseGus })).toBe('Gus, answer me.');
+    const off = new ChatLayer({ fetch: m.fetch });
+    expect(await off.rewriteText({ view, speech: accuseGus })).toBeNull();
+  });
+
   it('makes no request without a key or when turned off, and reports "off"', async () => {
     const m = mock(() => okReply('unused'));
     const layer = new ChatLayer({ fetch: m.fetch });
@@ -239,6 +284,43 @@ describe('prompts use only the speaking bot’s own view', () => {
     d = until(d, 'discussion', 3);
     const pub = line('banter', 'Morning, all.', { kind: 'banter' });
     expect(buildPrompt(viewFor(d.state, 'p6'), pub, 200).user).not.toContain('hit her');
+  });
+
+  it('points out lines said to the bot since it last spoke', () => {
+    const user = buildPrompt(viewFor(day2().state, 'p0'), accuseGus, 160).user;
+    expect(user).toContain("Said to you since your last message: Bea: Ada, what's your role?");
+    let d = act(day2(), 'p0', { type: 'chat', channel: 'public', text: 'Patience, Bea.' });
+    d = act(d, 'p3', { type: 'chat', channel: 'public', text: 'Lovely weather.' });
+    const after = buildPrompt(viewFor(d.state, 'p0'), accuseGus, 160).user;
+    expect(after).not.toContain('Said to you');
+    expect(after).toContain('Your recent messages: "Patience, Bea."');
+  });
+
+  it('drops the bluff once the bot is dead, but keeps living partners secret', () => {
+    const d = killGus(day2());
+    const banter = line(
+      'deadBanter',
+      'Watching is agony.',
+      { kind: 'banter' },
+      { channel: 'dead' },
+    );
+    const user = buildPrompt(viewFor(d.state, 'p6'), banter, 160).user;
+    expect(user).not.toMatch(/Keep that story|Never admit your real role|Your secret role/);
+    expect(user).toContain('Your living partners can still win');
+  });
+
+  it('after the game, shows every role and the result', () => {
+    let d = start(pinnedGame(['augur', 'resident', 'resident', 'resident', 'hatchet']));
+    d = putOnTrial(d, 'p4', ['p0', 'p1', 'p2']);
+    d = judge(d, { p0: 'guilty', p1: 'guilty', p2: 'guilty', p3: 'guilty' });
+    d = until(d, 'ended');
+    const end = line('endWin', 'Good game!', { kind: 'react', about: 'end' });
+    const user = buildPrompt(viewFor(d.state, 'p1'), end, 160).user;
+    expect(user).toContain('nothing left to hide');
+    expect(user).toContain(
+      'Final roles: Ada (Augur), Bea (Resident), Cal (Resident), Dov (Resident), Eli (Hatchet).',
+    );
+    expect(user).toContain('Result: the Town won.');
   });
 
   it('keeps player chat on one line and strips tag brackets so it cannot break out of <chat>', () => {
@@ -647,6 +729,41 @@ describe('guardrails', () => {
     const view = viewFor(g.state, 'p5');
     expect(
       checkReply('Ada, you defended Gus. Explain.', { view, speech: fayAccusesAda, maxChars: 200 }),
+    ).toBeNull();
+  });
+
+  it('a dead Syndicate bot may not name a living partner in the dead chat', () => {
+    const d = killGus(day2());
+    const banter = line(
+      'deadBanter',
+      'Watching is agony.',
+      { kind: 'banter' },
+      { channel: 'dead' },
+    );
+    const view = viewFor(d.state, 'p6');
+    expect(
+      checkReply('Fay will finish what I started.', { view, speech: banter, maxChars: 160 }),
+    ).toBe('teammate-named');
+    expect(
+      checkReply('Watching from down here is agony.', { view, speech: banter, maxChars: 160 }),
+    ).toBeNull();
+  });
+
+  it('Syndicate night chat may discuss other suspects freely', () => {
+    const d = until(day2(), 'night', 2);
+    const plan = line(
+      'mafiaPlan',
+      'Ada tonight. She talks too much.',
+      { kind: 'plan', target: 'p0' },
+      { channel: 'mafia' },
+    );
+    const view = viewFor(d.state, 'p5');
+    expect(
+      checkReply('Ada tonight. Bea is suspicious of her anyway.', {
+        view,
+        speech: plan,
+        maxChars: 160,
+      }),
     ).toBeNull();
   });
 
