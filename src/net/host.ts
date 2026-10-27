@@ -131,6 +131,7 @@ export interface HostSave {
   seats: LobbySeat[];
   settings: LobbySettings;
   status: LobbyStatus;
+  round: number;
   game: GameState | null;
   bots: BotState[];
   tokens: [string, PlayerId][];
@@ -151,6 +152,7 @@ export function parseHostSave(raw: unknown): HostSave | null {
     return null;
   if (typeof s.settings !== 'object' || s.settings === null) return null;
   if (typeof s.status !== 'string' || !LOBBY_STATUSES.includes(s.status)) return null;
+  if (typeof s.round !== 'number') return null;
   if (s.game !== null && (typeof s.game !== 'object' || s.game?.v !== 1)) return null;
   if ((s.status === 'open') !== (s.game === null)) return null;
   for (const list of [s.bots, s.tokens, s.banned, s.transcript]) {
@@ -195,6 +197,7 @@ export class HostSession implements GameSession {
   private seats: LobbySeat[];
   private settings: LobbySettings = { roles: null, pace: 'standard' };
   private status: LobbyStatus = 'open';
+  private round = 0;
   private game: GameState | null = null;
   private bots = new Map<PlayerId, BotState>();
   private botsDirty = false;
@@ -234,6 +237,7 @@ export class HostSession implements GameSession {
     if (saved) {
       this.settings = { ...saved.settings };
       this.status = saved.status;
+      this.round = saved.round;
       this.game = saved.game;
       for (const bot of saved.bots) this.bots.set(bot.id, bot);
       this.tokens = new Map(saved.tokens);
@@ -358,6 +362,7 @@ export class HostSession implements GameSession {
       seats: this.seats,
       settings: this.settings,
       status: this.status,
+      round: this.round,
       game: this.game,
       bots: [...this.bots.values()],
       tokens: [...this.tokens],
@@ -456,6 +461,7 @@ export class HostSession implements GameSession {
       return e instanceof Error ? e.message : String(e);
     }
     this.game = result.state;
+    this.round++;
     this.gameGen++;
     this.speechChain.clear();
     this.transcript = [];
@@ -472,16 +478,33 @@ export class HostSession implements GameSession {
     return null;
   }
 
-  /** After a game ends, return everyone to the lobby for another round. */
+  /**
+   * After a game ends, return everyone to the lobby for another round. Bots,
+   * settings, and connected friends keep their seats. Friends who are gone
+   * lose theirs so the next game doesn't seat them; they are not banned and
+   * can join again while the lobby is open.
+   */
   backToLobby(): void {
     if (this.status !== 'ended') return;
     this.game = null;
     this.gameGen++;
     this.bots.clear();
+    this.speechChain.clear();
     this.clearTimer();
+    const gone = new Set(
+      this.seats.filter((s) => s.kind === 'human' && !s.connected).map((s) => s.id),
+    );
+    if (gone.size > 0) {
+      this.seats = this.seats.filter((s) => !gone.has(s.id));
+      for (const [token, id] of this.tokens) if (gone.has(id)) this.tokens.delete(token);
+      for (const id of gone) {
+        this.channels.delete(id);
+        this.buckets.delete(id);
+      }
+    }
     for (const ch of this.channels.values()) ch.reset();
     this.status = 'open';
-    this.store.set({ view: null });
+    this.store.set({ view: null, lastRejection: null });
     this.lobbyChanged();
   }
 
@@ -842,7 +865,7 @@ export class HostSession implements GameSession {
   }
 
   private lobby(): LobbyView {
-    return lobbyView(this.code, this.hostId, this.status, this.seats, this.settings);
+    return lobbyView(this.code, this.hostId, this.status, this.seats, this.settings, this.round);
   }
 
   private sessionStatus(): 'lobby' | 'playing' | 'ended' {

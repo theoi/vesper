@@ -51,9 +51,11 @@ export function mountShell(root: HTMLElement, controller: AppController): () => 
 
   const render = (state: AppState) => {
     const key = frameFor(state);
-    if (key !== frameKey) {
+    // Each game gets a fresh game screen, even if a reconnect skipped the lobby in between.
+    const id = key === 'game' ? `game:${state.session?.lobby?.round ?? 0}` : key;
+    if (id !== frameKey) {
       frame?.dispose?.();
-      frameKey = key;
+      frameKey = id;
       frame = FRAMES[key](controller);
       root.replaceChildren(frame.el);
     }

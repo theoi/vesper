@@ -270,3 +270,43 @@ describe('host resume', () => {
     expect(solo.getState().session?.lobby?.seats).toHaveLength(7);
   });
 });
+
+describe('rematch', () => {
+  it('gives each game its own Claude budget and keeps friends and bots', async () => {
+    const net = createMemoryNetwork();
+    const anthropic = fakeAnthropic();
+    const c = new AppController({
+      transport: () => net,
+      baseUrl: 'https://theoi.github.io/vesper/',
+      storage: memoryStore(),
+      claudeFetch: anthropic.fetch,
+      claudeLimits: { maxCallsPerGame: 4 },
+    });
+    const { friend } = await hostWithFriend(c, net);
+    c.setClaudeKey(KEY);
+    const seats = c.getState().session!.lobby!.seats.map((s) => s.id);
+
+    expect(c.start()).toBeNull();
+    for (let i = 0; i < 200 && c.getState().session?.status !== 'ended'; i++) {
+      await vi.advanceTimersByTimeAsync(5000);
+    }
+    expect(c.getState().session?.status).toBe('ended');
+    expect(c.getState().claude.callsThisGame).toBe(4);
+    expect(c.getState().claude.status.state).toBe('degraded');
+    expect(c.botTranscript().some((l) => l.reason === 'budget')).toBe(true);
+
+    c.backToLobby();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(friend.snapshot().status).toBe('lobby');
+    expect(c.getState().session?.lobby?.seats.map((s) => s.id)).toEqual(seats);
+
+    expect(c.start()).toBeNull();
+    expect(c.getState().claude.callsThisGame).toBe(0);
+    expect(c.getState().claude.lines).toBe(0);
+    expect(c.getState().claude.status.state).not.toBe('degraded');
+    for (let i = 0; i < 40; i++) await vi.advanceTimersByTimeAsync(1000);
+    expect(friend.snapshot().status).toBe('playing');
+    expect(c.botTranscript().some((l) => l.source === 'claude')).toBe(true);
+    expect(c.getState().claude.callsThisGame).toBeGreaterThan(0);
+  });
+});

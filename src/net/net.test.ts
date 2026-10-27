@@ -319,6 +319,124 @@ describe('game sessions', () => {
   });
 });
 
+describe('rematch', () => {
+  const runOut = async (host: HostSession) => {
+    for (let i = 0; i < 200 && host.snapshot().status !== 'ended'; i++) await flush(10_000);
+    expect(host.snapshot().status).toBe('ended');
+  };
+
+  it('plays a second game in the same room with the same friends, bots, and settings', async () => {
+    const net = createMemoryNetwork();
+    const host = await openHost(net);
+    const a = await join(net, 'Ari');
+    const b = await join(net, 'Bo');
+    host.fillWithBots(8);
+    host.updateSettings({ pace: 'fast' });
+    const seats1 = host.snapshot().lobby!.seats;
+    expect(host.start()).toBeNull();
+    expect(host.snapshot().lobby?.round).toBe(1);
+    await flush(5000);
+    // Bo leaves partway through the first game.
+    const boSeat = b.client.snapshot().you;
+    b.client.leave();
+    await runOut(host);
+    const game1 = host.debugState();
+    const aGame1 = a.received.length;
+    expect(a.client.snapshot().view?.result).not.toBeNull();
+
+    host.backToLobby();
+    await flush(20);
+    expect(host.snapshot().status).toBe('lobby');
+    expect(host.snapshot().view).toBeNull();
+    const lobby = a.client.snapshot().lobby!;
+    expect(a.client.snapshot().status).toBe('lobby');
+    expect(a.client.snapshot().view).toBeNull();
+    expect(lobby.status).toBe('open');
+    expect(lobby.round).toBe(1);
+    expect(lobby.settings.pace).toBe('fast');
+    // Everyone who stayed keeps their seat; Bo's empty seat is gone.
+    expect(lobby.seats.map((s) => s.id)).toEqual(
+      seats1.filter((s) => s.id !== boSeat).map((s) => s.id),
+    );
+
+    // Bo can come back while the lobby is open, in a new seat.
+    const bo2 = await join(net, 'Bo', b.token);
+    expect(bo2.client.snapshot().status).toBe('lobby');
+    expect(bo2.client.snapshot().you).not.toBe(boSeat);
+    expect(host.snapshot().lobby?.seats).toHaveLength(seats1.length);
+
+    expect(host.start()).toBeNull();
+    await flush(20);
+    expect(host.snapshot().lobby?.round).toBe(2);
+    const game2Start = host.debugState().game!;
+    expect(game2Start.phase.day).toBeLessThanOrEqual(1);
+    expect(game2Start.log.some((e) => e.type === 'gameOver')).toBe(false);
+    for (const c of [a, bo2]) {
+      const snap = c.client.snapshot();
+      expect(snap.status).toBe('playing');
+      expect(snap.view?.result).toBeNull();
+      const assigned = snap.view?.events.filter((e) => e.type === 'roleAssigned') ?? [];
+      expect(assigned).toHaveLength(1);
+      expect(assigned[0]).toMatchObject({ player: snap.you });
+      // A fresh event stream, numbered from the start again.
+      expect(snap.view?.events[0]?.seq).toBe(1);
+    }
+
+    await runOut(host);
+    expect(a.client.snapshot().view?.result).not.toBeNull();
+    const game2 = host.debugState();
+    const audits = [
+      { playerId: a.client.snapshot().you!, messages: a.received.slice(0, aGame1), state: game1 },
+      { playerId: a.client.snapshot().you!, messages: a.received.slice(aGame1), state: game2 },
+      { playerId: bo2.client.snapshot().you!, messages: bo2.received, state: game2 },
+    ];
+    for (const { playerId, messages, state } of audits) {
+      expect(messages.filter((m) => m.t === 'view').length).toBeGreaterThan(0);
+      const problems = auditClientMessages({
+        playerId,
+        messages,
+        hostLog: state.game!.log,
+        tokens: state.tokens,
+      });
+      expect(problems).toEqual([]);
+    }
+  });
+
+  it('never shows the last game to a friend whose connection missed the return to the lobby', async () => {
+    const net = createMemoryNetwork();
+    const host = await openHost(net);
+    const a = await join(net, 'Ari');
+    host.fillWithBots(7);
+    host.updateSettings({ pace: 'fast' });
+    expect(host.start()).toBeNull();
+    await runOut(host);
+    await flush(20);
+    const seat = a.client.snapshot().you;
+    const stale: string[] = [];
+    a.client.subscribe((s) => {
+      if (s.lobby?.round === 2 && s.view?.result) stale.push(s.status);
+    });
+
+    // The lobby message is lost with the connection, and the next game starts
+    // before Ari is back.
+    host.backToLobby();
+    const transport = (a.client as unknown as { transport: Parameters<typeof net.cut>[0] })
+      .transport;
+    net.cut(transport);
+    expect(host.start()).toBeNull();
+    await flush(0);
+    expect(a.client.snapshot().status).toBe('reconnecting');
+    await flush(3000);
+
+    const snap = a.client.snapshot();
+    expect(snap.status).toBe('playing');
+    expect(snap.you).toBe(seat);
+    expect(snap.lobby?.round).toBe(2);
+    expect(snap.view?.result).toBeNull();
+    expect(snap.view?.events.filter((e) => e.type === 'roleAssigned')).toHaveLength(1);
+    expect(stale).toEqual([]);
+  });
+});
 describe('host resume', () => {
   const roundTrip = (save: HostSave): HostSave => JSON.parse(JSON.stringify(save)) as HostSave;
 
