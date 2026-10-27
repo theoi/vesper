@@ -16,7 +16,8 @@
  * 4. Marks. Slanderers frame their targets; Embalmers prepare theirs.
  * 5. Protection. Mender heals give defense 2 tonight, Drifter armor defense 1,
  *    and Sentinels stand guard.
- * 6. Attacks (power 1) in order: Syndicate, Cutthroats, Reckoners. Each
+ * 6. Attacks in order: Syndicate (power 1), Cutthroats (power 2), Reckoners
+ *    (power 1). Each
  *    guarding Sentinel intercepts one attack on its charge: that attack is
  *    cancelled, the Sentinel strikes the attacker (power 2), and the attacker's
  *    blow lands on the Sentinel (power 2). An attack kills when its power exceeds
@@ -133,7 +134,8 @@ export function resolveNight(ctx: Ctx): NightReport {
     const target = redirect.get(c.id) ?? (active(c) ? acts.get(c.id) : undefined);
     if (!target) continue;
     visits.push([c, target]);
-    primary.push({ attacker: c, target, power: 1, cause: 'cutthroat', primary: true });
+    const power = ROLES[c.role].night?.power ?? 1;
+    primary.push({ attacker: c, target, power, cause: 'cutthroat', primary: true });
   }
 
   // Reckoners.

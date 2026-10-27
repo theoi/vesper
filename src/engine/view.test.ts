@@ -226,7 +226,8 @@ describe('setup', () => {
   });
 
   it('assigns each Accuser a Town target', () => {
-    const cfg = defaultConfig(players(8));
+    const cfg = defaultConfig(players(11));
+    expect(cfg.roles).toContain('accuser');
     for (let seed = 0; seed < 10; seed++) {
       const s = createGame(cfg, seed).state;
       const acc = s.players.find((p) => p.role === 'accuser')!;

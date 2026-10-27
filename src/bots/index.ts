@@ -5,31 +5,24 @@
  *   const view = viewFor(state, bot.id, { sinceSeq: bot.seenSeq });
  *   const d = decideBot(bot, view, now);
  *   bot = d.bot;
+ *   for (const s of d.speech) applyIntent(state, bot.id, s.intent, now); // or rewrite s.intent.text first
  *   for (const intent of d.intents) applyIntent(state, bot.id, intent, now);
- *   for (const s of d.speech) applyIntent(state, bot.id, s.intent, now); // or rewrite s.intent.text via an LLM first
- *   // call again at d.wakeAt or when new events arrive
+ *   // call again at d.wakeAt, and whenever new events arrive
  *
  * The LLM seam: `BotSpeech.act` is the structured meaning (claim, accusation,
- * reaction, ...). A chat layer may replace only `intent.text`; decisions stay here.
+ * reaction, ...) and `BotSpeech.category` the kind of line. A chat layer may
+ * replace only `intent.text`; every decision stays scripted here.
  */
 import { Rng, hashSeed } from '../engine/rng.ts';
-import type { PlayerId, PlayerView } from '../engine/types.ts';
-import type { BotDecision, BotState, Personality } from './types.ts';
+import type { PlayerId } from '../engine/types.ts';
+import { freshMemory } from './brain.ts';
+import { PERSONALITIES } from './personalities.ts';
+import type { BotState } from './types.ts';
 
 export type * from './types.ts';
-
-export const PERSONALITIES: Personality[] = [
-  {
-    id: 'steady',
-    label: 'Steady',
-    voice: 'Calm, plain-spoken, reasons out loud.',
-    temperament: 'calm',
-    verbosity: 0.5,
-    boldness: 0.5,
-    trust: 0.5,
-    quirks: [],
-  },
-];
+export { decideBot } from './brain.ts';
+export { PERSONALITIES } from './personalities.ts';
+export { parseLine, parseWill } from './parse.ts';
 
 export const BOT_NAMES = [
   'Ottilie',
@@ -77,6 +70,7 @@ export function pickBotNames(count: number, seed: number | string, taken: string
   return out;
 }
 
+/** Create a bot for a seat. Pass a personality id to choose its voice. */
 export function createBot(
   playerId: PlayerId,
   seed: number | string,
@@ -91,23 +85,6 @@ export function createBot(
     personality,
     seenSeq: 0,
     wakeAt: 0,
-    memory: {
-      role: null,
-      suspicion: {},
-      known: {},
-      claims: {},
-      claimed: null,
-      phaseKey: '',
-      saidThisPhase: 0,
-      actedThisPhase: false,
-      topics: [],
-      flags: {},
-    },
+    memory: freshMemory(),
   };
-}
-
-/** Decide what the bot does now, from its own view only. */
-export function decideBot(bot: BotState, view: PlayerView, now: number): BotDecision {
-  const next = { ...bot, seenSeq: view.lastSeq, wakeAt: now + 1000 };
-  return { bot: next, intents: [], speech: [], wakeAt: next.wakeAt };
 }

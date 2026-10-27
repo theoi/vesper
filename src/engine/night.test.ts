@@ -228,6 +228,25 @@ describe('night resolution', () => {
     expect(resultsFor(d, 'p5')).toContainEqual({ kind: 'attackedSurvived', savedBy: 'defense' });
   });
 
+  it("the Cutthroat's blade pierces the Patron's defense and Drifter armor, but not a heal", () => {
+    const roles: RoleId[] = [
+      'mender',
+      'drifter',
+      'resident',
+      'resident',
+      'resident',
+      'patron',
+      'cutthroat',
+    ];
+    const a = runNight(start(pinnedGame(roles)), { p6: 'p5' });
+    expect(alive(a, 'p5')).toBe(false);
+    const b = runNight(start(pinnedGame(roles)), { p6: 'p1', p1: 'p1' });
+    expect(alive(b, 'p1')).toBe(false);
+    const c = runNight(start(pinnedGame(roles)), { p6: 'p2', p0: 'p2' });
+    expect(alive(c, 'p2')).toBe(true);
+    expect(resultsFor(c, 'p2')).toContainEqual({ kind: 'attackedSurvived', savedBy: 'healed' });
+  });
+
   it('the Reckoner cannot shoot on Night 1, then shoots on Night 2', () => {
     const roles: RoleId[] = ['reckoner', 'resident', 'resident', 'resident', 'hatchet', 'resident'];
     let d = until(start(pinnedGame(roles)), 'night');
