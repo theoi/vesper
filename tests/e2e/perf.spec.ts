@@ -16,19 +16,17 @@ const DEADLINE_MS = 150_000;
 
 type Bucket = 'day' | 'night' | 'sequence';
 
-/** What the stage is doing: a sequence playing, or the phase it rests in. */
-async function stageState(page: Page): Promise<Bucket | null> {
+/** What the stage is doing: a sequence playing (and which), or the phase it rests in. */
+async function stageState(page: Page): Promise<{ bucket: Bucket | null; sequence?: string }> {
   const s = await page.evaluate(() => {
-    const stage = document.querySelector<HTMLElement>('.vs-stage');
-    return stage
-      ? { phase: stage.dataset.phase, playing: stage.classList.contains('playing') }
-      : null;
+    const stage = document.querySelector<HTMLElement>('[data-testid="stage"]');
+    return stage ? { phase: stage.dataset.phase, sequence: stage.dataset.sequence } : null;
   });
-  if (!s) return null;
-  if (s.playing) return 'sequence';
-  if (s.phase === 'discussion') return 'day';
-  if (s.phase === 'night') return 'night';
-  return null;
+  if (!s) return { bucket: null };
+  if (s.sequence) return { bucket: 'sequence', sequence: s.sequence };
+  if (s.phase === 'discussion') return { bucket: 'day' };
+  if (s.phase === 'night') return { bucket: 'night' };
+  return { bucket: null };
 }
 
 async function mainThread(cdp: CDPSession): Promise<{ at: number; busy: number }> {
@@ -60,16 +58,18 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       };
       const enough = () => Object.values(spent).every((b) => b.wall >= MIN_MS);
       const start = Date.now();
+      const sequences = new Set<string>();
       let state = await stageState(me.page);
       let last = await mainThread(cdp);
       while (!enough() && Date.now() - start < DEADLINE_MS) {
         await me.page.waitForTimeout(250);
         const now = await mainThread(cdp);
         const next = await stageState(me.page);
+        if (next.sequence) sequences.add(next.sequence);
         // Count only intervals that started and ended in the same state.
-        if (state && state === next) {
-          spent[state].wall += now.at - last.at;
-          spent[state].busy += now.busy - last.busy;
+        if (state.bucket && state.bucket === next.bucket && state.sequence === next.sequence) {
+          spent[state.bucket].wall += now.at - last.at;
+          spent[state.bucket].busy += now.busy - last.busy;
         }
         state = next;
         last = now;
@@ -85,7 +85,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
           },
         ]),
       ) as Record<Bucket, { busyPct: number; measuredMs: number }>;
-      const summary = { motion, budgetPct: BUDGET_PCT, ...report };
+      const summary = { motion, budgetPct: BUDGET_PCT, ...report, sequences: [...sequences] };
       console.log(`E2E-PERF ${JSON.stringify(summary)}`);
       await testInfo.attach(`perf-${motion}.json`, {
         body: JSON.stringify(summary, null, 1),
