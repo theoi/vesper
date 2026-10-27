@@ -14,7 +14,7 @@ Host-authoritative online rooms over WebRTC. The host's browser runs the engine 
 - `room.ts`: room codes (5 characters, no look-alikes) and share links (`?room=CODE`).
 - `transport.ts`: the transport interface and `NetError` codes with player-facing messages.
 - `peerjs.ts` (primary): the host registers `vesper-room-<CODE>` on the public PeerJS server; clients connect straight to it. Public STUN only, no TURN. Messages travel as JSON text: PeerJS's default binary packing took about 1 ms per 16-seat view, roughly 25 times JSON.stringify.
-- `trystero.ts` (fallback): Trystero over public Nostr relays, used when the PeerJS server can't be reached.
+- `trystero.ts` (fallback): Trystero over public Nostr relays, used when the PeerJS server can't be reached. The relays are pinned (`NOSTR_RELAYS`): Trystero's own pick for our app id included relays that were down, blocked its event kinds, or rate-limited. `tests/e2e/nostr-relays.spec.ts` checks the pinned ones.
 - `fallback.ts`: opens the room on every transport; clients try them in order.
 - `memory.ts`: in-process transport for unit tests.
 
