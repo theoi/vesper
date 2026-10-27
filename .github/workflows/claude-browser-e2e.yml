@@ -1,0 +1,71 @@
+name: Claude browser e2e
+
+# Manual only. Opens the LIVE site in headless Chromium, enters the
+# ANTHROPIC_API_KEY secret into the host's Claude key field, and plays a game
+# with Claude bots and one remote friend. Uploads a summary (status, call
+# counts, cost estimate, source-tagged bot transcript, audit results). The run
+# is capped by the per-game call budget (max_calls). The key is only in the
+# environment of the test step; traces are off so it can't be recorded.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Site to test
+        default: https://theoi.github.io/vesper/
+      max_calls:
+        description: Per-game cap on Claude calls (10-200)
+        default: '60'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-browser-e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Install before the key is in any environment, so no install script can read it.
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Play with Claude bots on the live site
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          CLAUDE_E2E_CALLS: ${{ inputs.max_calls }}
+        run: |
+          set +x
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "The ANTHROPIC_API_KEY secret is not set."; exit 1; fi
+          npx playwright test --grep @claude --trace off --reporter=list
+      - name: Check results for the key
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +x
+          if [ -n "$ANTHROPIC_API_KEY" ] && grep -rqF -- "$ANTHROPIC_API_KEY" test-results 2>/dev/null; then
+            echo "The key appeared in test results; deleting them instead of uploading."
+            rm -rf test-results
+            exit 1
+          fi
+          if [ -f test-results/claude/summary.json ]; then
+            node -e 'const s=require("./test-results/claude/summary.json"); const t=s.transcript||[]; console.log(JSON.stringify({...s, transcript: t.length+" lines"}, null, 2))' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: claude-browser-e2e-${{ github.run_id }}
+          path: test-results/claude
+          if-no-files-found: warn
+          retention-days: 30

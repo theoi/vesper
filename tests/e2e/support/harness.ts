@@ -35,9 +35,12 @@ export async function openPlayer(browser: Browser, name: string): Promise<Player
 }
 
 /** Host a room from the home screen; returns the room code. */
-export async function hostRoom(p: Player, opts: { online?: boolean } = {}): Promise<string> {
+export async function hostRoom(
+  p: Player,
+  opts: { online?: boolean; params?: Record<string, string> } = {},
+): Promise<string> {
   const online = opts.online ?? true;
-  await p.page.goto(appUrl());
+  await p.page.goto(appUrl(opts.params));
   await p.page.getByTestId('name-input').fill(p.name);
   await p.page.getByTestId(online ? 'host-online' : 'host-solo').click();
   await expect(p.page.getByTestId('screen-lobby')).toBeVisible();
