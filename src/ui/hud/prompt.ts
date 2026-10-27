@@ -198,6 +198,7 @@ export function createPromptBar(
     el,
     update(v, pick, whisperOpen) {
       view = v;
+      el.dataset.mode = pick.mode;
       setText(cue, promptText(v, pick));
       const you = v.you;
 
@@ -274,7 +275,11 @@ export function createPromptBar(
       show(clearNight, !!you.nightTargets && v.allowed.nightTargets.length > 0);
       show(reveal, v.allowed.reveal);
       show(ready, v.allowed.ready);
-      setText(ready, you.ready ? 'Not ready' : 'Ready');
+      setText(ready, you.ready ? 'Ready ✓' : 'Ready');
+      ready.title = you.ready
+        ? 'You are ready. Click again to take it back.'
+        : 'End this phase early once everyone is ready';
+      ready.setAttribute('aria-pressed', String(you.ready));
       ready.classList.toggle('is-chosen', you.ready);
     },
   };
