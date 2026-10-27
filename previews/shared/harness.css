@@ -1,0 +1,98 @@
+/* Structural layout only. Each direction owns the look of every element. */
+html,
+body.pv-body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pv-stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pv-bg,
+.pv-fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pv-fx {
+  pointer-events: none;
+  z-index: 5;
+}
+
+.pv-scenes {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.pv-scene {
+  position: absolute;
+  inset: 0;
+}
+
+.pv-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  cursor: pointer;
+}
+
+.pv-gate.pv-gone {
+  pointer-events: none;
+}
+
+.pv-rail {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: opacity 0.4s;
+}
+
+.pv-rail button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pv-list,
+.pv-ctl {
+  display: flex;
+  align-items: center;
+}
+
+.pv-list {
+  flex: 1;
+}
+
+.pv-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  overflow: hidden;
+}
+
+.pv-progress i {
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+.pv-no-rail .pv-rail {
+  opacity: 0;
+  pointer-events: none;
+}
