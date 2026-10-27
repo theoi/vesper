@@ -18,7 +18,13 @@ import {
 import { checkReply, cleanReply, type GuardRule } from './guard.ts';
 import { buildPrompt, type Prompt } from './prompt.ts';
 
-export type ChatState = 'off' | 'ok' | 'invalid-key' | 'rate-limited' | 'degraded';
+export type ChatState =
+  | 'off'
+  | 'ok'
+  | 'invalid-key'
+  | 'browser-blocked' // a working key whose organization refuses browser requests
+  | 'rate-limited'
+  | 'degraded';
 
 export interface ChatStatus {
   state: ChatState;
@@ -32,6 +38,7 @@ export interface ChatStatus {
 export type FallbackReason =
   | 'off' // no key, or turned off
   | 'invalid-key'
+  | 'browser-blocked' // the key's organization refuses browser requests
   | 'unavailable' // spend limit, missing model, or cooling down after repeated failures
   | 'rate-limited'
   | 'budget' // per-game call budget used up
@@ -174,7 +181,7 @@ export class ChatLayer {
   #clock: () => number;
   #url: string | undefined;
   /** Set until the host reconfigures: a bad key, a missing model, a spend limit. */
-  #blocked: { state: 'invalid-key' | 'degraded'; detail: string } | null = null;
+  #blocked: { state: 'invalid-key' | 'browser-blocked' | 'degraded'; detail: string } | null = null;
   #retryAt = 0;
   #failures = 0;
   #cooldownUntil = 0;
@@ -327,7 +334,7 @@ export class ChatLayer {
     const start = this.#clock();
     if (!this.#key || !this.#enabled) return fallback('off');
     if (this.#blocked)
-      return fallback(this.#blocked.state === 'invalid-key' ? 'invalid-key' : 'unavailable');
+      return fallback(this.#blocked.state === 'degraded' ? 'unavailable' : this.#blocked.state);
     if (start < this.#retryAt) return fallback('rate-limited');
     if (start < this.#cooldownUntil) return fallback('unavailable');
     if (this.#gameCalls >= this.limits.maxCallsPerGame) return fallback('budget');
@@ -431,6 +438,13 @@ export class ChatLayer {
             e.status === 403
               ? 'This API key is not allowed to use Claude. Bots use scripted chat.'
               : 'Anthropic rejected this API key. Bots use scripted chat.',
+        };
+        break;
+      case 'browser-blocked':
+        this.#blocked = {
+          state: 'browser-blocked',
+          detail:
+            "This key's Anthropic organization blocks browser requests (custom data retention). Use a key from an organization without custom retention.",
         };
         break;
       case 'workspace':
@@ -537,6 +551,8 @@ function reasonFor(kind: CallErrorKind): FallbackReason {
     case 'invalid-key':
     case 'workspace':
       return 'invalid-key';
+    case 'browser-blocked':
+      return 'browser-blocked';
     case 'spend-limit':
     case 'model':
       return 'unavailable';
