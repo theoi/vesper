@@ -23,3 +23,14 @@ Options: `--games N`, `--players A-B`, `--seed S`, `--workers W`, `--timers fast
 - The declared winners match the win conditions.
 
 The script exits non-zero on any violation or unfinished game.
+
+## Pacing with stand-in humans
+
+```bash
+node scripts/pacing.ts --games 1000 --players 9 --humans 1             # fast pace
+node scripts/pacing.ts --games 500 --players 15 --humans 2 --pace standard
+```
+
+Options: `--games N`, `--players P`, `--humans H`, `--seed S`, `--pace fast|standard`, `--human-vote LO-HI` (ms after voting opens that a stand-in votes, default `4500-9000`), `--human-vote-chance X` (default 0.8).
+
+`runGame({ humans })` seats stand-in people (`standin.ts`): they chat in plain text with no `meta`, answer when named, vote and judge after human-like delays, and act at night. The game loop runs like `HostSession`: timers first, then each player in seat order, waking bots about 400 ms after new events (`reactMs`). The report covers what a person at the table sees: voting days with a trial, time to the first trial, how often the stand-in could vote before a trial started, guilty and innocent verdicts by the defendant's side, public lines per second in discussion, the busiest 5 s, questions that name a person early on Day 1, and win rates.

@@ -171,6 +171,13 @@ export interface Timers {
   dawn: number;
   /** Extra dawn time per death being revealed. */
   dawnPerDeath: number;
+  /**
+   * Earliest a trial may start after a voting phase opens, so every player gets
+   * a chance to vote. Votes cast sooner still count: a majority reached early
+   * starts the trial when this window ends. Never more than half of the voting
+   * phase. Omitted: 35% of `voting` (7 s on the fast pace, 14 s on standard).
+   */
+  trialDelay?: number;
 }
 
 export interface GameOptions {
@@ -696,6 +703,11 @@ export interface PlayerView {
   votes: Record<PlayerId, PlayerId>;
   /** Weighted votes needed to put someone on trial. */
   voteThreshold: number;
+  /**
+   * During voting: when a vote majority can first start a trial (see
+   * `Timers.trialDelay`). Before then a majority waits. Null outside voting.
+   */
+  trialOpensAt: number | null;
   trial: TrialView | null;
   trialsToday: number;
   graveyard: GraveEntry[];

@@ -18,8 +18,10 @@ import {
   everyoneReady,
   isMafia,
   judgmentVoters,
+  majorityTarget,
   nightTargets,
   tallyFor,
+  trialOpensAt,
   voteTargets,
   voteThreshold,
   voteWeight,
@@ -77,6 +79,9 @@ export function assertValidConfig(config: GameConfig): void {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 0)
       errors.push(`Timer ${k} is invalid.`);
   }
+  const delay = config.timers?.trialDelay;
+  if (delay !== undefined && (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0))
+    errors.push('Timer trialDelay is invalid.');
   const o = config.options;
   if (!o || !(o.maxTrialsPerDay >= 1) || !(o.stalemateCycles >= 1) || !(o.maxDays >= 2)) {
     errors.push('Game options are invalid.');
@@ -180,20 +185,31 @@ export function applyIntent(
   return finish(ctx);
 }
 
-/** Advance any phases whose timers have run out by `now`. */
+/**
+ * Advance any phases whose timers have run out by `now`, and start a trial
+ * that a vote majority was waiting on (see `Timers.trialDelay`).
+ */
 export function tick(state: GameState, now: number): StepResult {
-  if (state.phase.endsAt === null || now < state.phase.endsAt) return { state, events: [] };
+  const due = nextDeadline(state);
+  if (due === null || now < due) return { state, events: [] };
   const ctx = begin(state, now);
   for (let i = 0; i < 32; i++) {
-    const endsAt = ctx.s.phase.endsAt;
-    if (endsAt === null || now < endsAt) break;
-    advance(ctx);
+    const next = nextDeadline(ctx.s);
+    if (next === null || now < next) break;
+    const waiting = majorityTarget(ctx.s);
+    const opens = trialOpensAt(ctx.s);
+    if (waiting && opens !== null && now >= opens) startTrial(ctx, waiting);
+    else advance(ctx);
   }
   return finish(ctx);
 }
 
 /** When the host should call `tick` next (null once the game has ended). */
 export function nextDeadline(state: GameState): number | null {
+  const opens = trialOpensAt(state);
+  if (opens !== null && majorityTarget(state) !== null) {
+    return Math.min(opens, state.phase.endsAt ?? opens);
+  }
   return state.phase.endsAt;
 }
 
@@ -275,7 +291,9 @@ function handleIntent(ctx: Ctx, me: PlayerState, intent: Intent): string | null 
       if (target === null) delete s.votes[me.id];
       else s.votes[me.id] = target;
       emit(ctx, 'all', { type: 'vote', voter: me.id, target, previous, weight: voteWeight(me) });
-      if (target !== null && tallyFor(s, target) >= voteThreshold(s)) startTrial(ctx, target);
+      if (target !== null && trialMayStart(ctx) && tallyFor(s, target) >= voteThreshold(s)) {
+        startTrial(ctx, target);
+      }
       return null;
     }
     case 'judge': {
@@ -322,7 +340,9 @@ function handleIntent(ctx: Ctx, me: PlayerState, intent: Intent): string | null 
       emit(ctx, 'all', { type: 'magistrateReveal', player: me.id });
       if (s.phase.kind === 'voting') {
         const target = s.votes[me.id];
-        if (target && tallyFor(s, target) >= voteThreshold(s)) startTrial(ctx, target);
+        if (target && trialMayStart(ctx) && tallyFor(s, target) >= voteThreshold(s)) {
+          startTrial(ctx, target);
+        }
       }
       return null;
     }
@@ -469,6 +489,11 @@ function startNight(ctx: Ctx): void {
   s.votingRemaining = null;
   s.night = {};
   enterPhase(ctx, 'night', s.config.timers.night);
+}
+
+/** False during the opening window of a voting phase, when a majority must wait. */
+function trialMayStart(ctx: Ctx): boolean {
+  return ctx.now >= (trialOpensAt(ctx.s) ?? ctx.now);
 }
 
 function startTrial(ctx: Ctx, defendant: PlayerId): void {

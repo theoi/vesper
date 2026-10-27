@@ -156,6 +156,8 @@ export interface BotMemory {
   recent: string[];
   /** Recently heard public lines (normalized), to avoid echoing others. */
   heard: string[];
+  /** When recent public lines were said (anyone's, ours included), for the room's chat budget. */
+  room: number[];
   /** Pressure on us today (accusations, votes). */
   heat: number;
   flags: Record<string, number>;

@@ -446,6 +446,62 @@ describe('answering people', () => {
     }
   });
 });
+
+describe('table pacing', () => {
+  const NINE: RoleId[] = [
+    'augur',
+    'mender',
+    'resident',
+    'resident',
+    'resident',
+    'resident',
+    'resident',
+    'patron',
+    'hatchet',
+  ];
+  /** A long game with a fast-paced Day 1 where Dov (p3) is a person, or a silent bot. */
+  function withPerson(roles: RoleId[], person = true): Driver {
+    const d = longGame(roles);
+    d.state.config.timers.firstDiscussion = 15_000;
+    d.state.players = d.state.players.map((p) => (p.id === 'p3' ? { ...p, isBot: !person } : p));
+    return d;
+  }
+  const botsFor = (d: Driver, seed: number) =>
+    d.state.players.filter((p) => p.id !== 'p3').map((p, i) => createBot(p.id, seed * 100 + i));
+  const publicLines = (d: Driver) =>
+    d.events.flatMap((e) => (e.type === 'chat' && e.channel === 'public' ? [e] : []));
+
+  it('nobody puts a question to a person by name during the first 15 s of Day 1', () => {
+    const askedOfDov = (person: boolean, seeds: number) => {
+      let n = 0;
+      for (let seed = 0; seed < seeds; seed++) {
+        const d = until(withPerson(NINE, person), 'discussion');
+        n += publicLines(driveAll(d, botsFor(d, seed), 15_000).d).filter(
+          (e) => e.meta?.kind === 'question' && e.meta.target === 'p3',
+        ).length;
+      }
+      return n;
+    };
+    // Control: a silent bot in the same seat does get asked.
+    expect(askedOfDov(false, 12)).toBeGreaterThan(0);
+    expect(askedOfDov(true, 40)).toBe(0);
+  });
+
+  it('a bot answers a person at once even when the room is busy', () => {
+    for (let seed = 0; seed < 6; seed++) {
+      let d = until(withPerson(NINE), 'discussion');
+      d = act(d, 'p3', { type: 'chat', channel: 'public', text: 'Cal, what is your role?' });
+      const asked = d.state.phase.startedAt + 1;
+      const bot = structuredClone(
+        decideBot(createBot('p2', seed, { personality: 'steady' }), viewFor(d.state, 'p2'), asked)
+          .bot,
+      );
+      bot.memory.room = Array.from({ length: 12 }, () => asked);
+      const first = drive(d, bot, 8_000).d.events.find((e) => e.type === 'chat' && e.from === 'p2');
+      expect(first?.at).toBeLessThan(asked + 4_000);
+    }
+  });
+});
 describe('reading human chat', () => {
   const players = ['Ada', 'Bea', 'Cal', 'Dov'].map((name, i) => ({
     id: `p${i}`,

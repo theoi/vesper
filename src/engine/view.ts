@@ -8,6 +8,7 @@ import {
   chatChannels,
   isMafia,
   nightTargets,
+  trialOpensAt,
   voteTargets,
   voteThreshold,
   whisperTargets,
@@ -109,6 +110,7 @@ export function viewFor(state: GameState, playerId: PlayerId, opts: ViewOptions 
     options: { ...state.config.options },
     votes: state.phase.kind === 'voting' ? { ...state.votes } : {},
     voteThreshold: voteThreshold(state),
+    trialOpensAt: trialOpensAt(state),
     trial: trial
       ? { defendant: trial.defendant, number: trial.number, voted: Object.keys(trial.ballots) }
       : null,

@@ -27,6 +27,20 @@ describe('headless simulation', () => {
     expect(new Set(lines).size / lines.length).toBeGreaterThan(0.7);
   });
 
+  it('public chat keeps to a pace a person can follow', () => {
+    for (let i = 0; i < 10; i++) {
+      const r = runGame({ seed: 300 + i, players: 9, humans: 1, keepState: true });
+      const at = (r.state?.log ?? []).flatMap((e) =>
+        e.type === 'chat' && e.channel === 'public' ? [e.at] : [],
+      );
+      expect(at.length).toBeGreaterThan(40);
+      // The room carries about 0.7 lines a second at nine seats; news gets some
+      // headroom. Without the shared budget the busiest 6 s run to 11–22 lines.
+      const busiest = Math.max(...at.map((t) => at.filter((x) => x >= t && x < t + 6000).length));
+      expect(busiest, `seed ${r.seed}`).toBeLessThanOrEqual(9);
+    }
+  });
+
   it('games stay clean when every line goes through the Claude chat layer', async () => {
     // A stand-in model that rewrites each draft a little and sometimes breaks a rule.
     let n = 0;

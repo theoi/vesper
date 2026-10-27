@@ -178,6 +178,9 @@ function onChat(m: Mind, e: Extract<GameEvent, { type: 'chat' }>): void {
     mem.msgs[e.from] = (mem.msgs[e.from] ?? 0) + 1;
     mem.heard.push(normalize(e.text));
     if (mem.heard.length > 40) mem.heard.splice(0, mem.heard.length - 40);
+    mem.room = mem.room.filter((at) => at > e.at - 10_000);
+    mem.room.push(e.at);
+    if (e.meta?.kind === 'question' && e.meta.target) mem.flags[`asked:${e.meta.target}`] = day(m);
     if (e.meta?.kind === 'react' && e.meta.about === 'death' && e.meta.target) {
       const key = `reacted:${e.meta.target}`;
       mem.flags[key] = (mem.flags[key] ?? 0) + 1;
@@ -217,6 +220,11 @@ function applyAct(m: Mind, from: PlayerId, a: SpeechAct, text: string, human: bo
       const list = mem.accusedBy[a.target] ?? [];
       if (!list.includes(from)) list.push(from);
       mem.accusedBy[a.target] = list;
+      // Someone put a name forward during the vote: the room has its push for today.
+      if (m.view.phase.kind === 'voting') {
+        mem.flags.pushDay = d;
+        mem.flags.pushTarget = m.view.players.findIndex((p) => p.id === a.target);
+      }
       if (a.target === self) {
         mem.heat += a.confidence;
         if (knowsInnocent(side(m))) {
