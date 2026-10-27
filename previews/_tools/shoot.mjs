@@ -47,7 +47,7 @@ for (const slug of slugs) {
     timeout: 15000,
   });
   await page.waitForTimeout(1200);
-  await page.screenshot({ path: join(outDir, `${slug}-gate.png`) });
+  await page.screenshot({ path: join(outDir, `${slug}-gate.png`), timeout: 120000 });
   await page.click('.pv-gate');
   await page.waitForTimeout(600);
   if (flags.has('--hide-ui')) await page.evaluate(() => document.body.classList.add('pv-no-rail'));
@@ -61,7 +61,7 @@ for (const slug of slugs) {
       if (wait > 0) await page.waitForTimeout(wait);
       const level = await page.evaluate(() => window.__preview.level());
       const file = join(outDir, `${slug}-${shot.name}.png`);
-      await page.screenshot({ path: file });
+      await page.screenshot({ path: file, timeout: 120000 });
       shots.push({ scene: scene.id, shot: shot.name, file, level: Number(level.toFixed(4)) });
     }
   }
