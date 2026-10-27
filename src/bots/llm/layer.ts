@@ -78,10 +78,10 @@ export interface ChatLimits {
 
 export const DEFAULT_LIMITS: ChatLimits = {
   timeoutMs: 4000,
-  maxCallsPerGame: 220,
+  maxCallsPerGame: 300,
   maxConcurrent: 3,
   maxCallsPerMinute: 45,
-  maxChars: 200,
+  maxChars: 160,
   maxTokens: 120,
 };
 
@@ -367,6 +367,19 @@ export class ChatLayer {
     } finally {
       this.#release();
     }
+  }
+
+  /**
+   * The same as `rewrite`, shaped for a host hook: resolves with Claude's text,
+   * or null when the scripted line should be used.
+   */
+  async rewriteText(input: {
+    view: PlayerView;
+    speech: BotSpeech;
+    signal?: AbortSignal;
+  }): Promise<string | null> {
+    const r = await this.rewrite(input.view, input.speech, { signal: input.signal });
+    return r.source === 'claude' ? r.text : null;
   }
 
   async #call(

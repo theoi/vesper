@@ -41,8 +41,9 @@ const FOREIGN_ROLES =
 const SLIP =
   /\b(teammates?|my (?:team|partners?|crew|boss|patron|hatchet|family)|our (?:team|crew|kill|target|boss|patron|hatchet|plan|family)|fellow syndicate|we (?:will |'ll |’ll )?(?:kill|killed|hit|take out|pick)\b)/i;
 
+/** Words that accuse someone or report a night result about them. */
 const ACCUSING =
-  /\b(sus|suss|suspicious|suspect|syndicate|mafia|scum|evil|liar|lying|lies|guilty|killer|hostile|fake|shady|lynch|hang|execute)\b/i;
+  /\b(sus|suss|suspicious|suspect|syndicate|mafia|scum|evil|liar|lying|lies|guilty|killer|hostile|fake|shady|lynch|hang|execute|villain|culprit|wolf|chase|chasing|blame|read|clear|tended|healed|protected|guarded|saved|watched|visited|checked|investigated)\b/i;
 
 const SELF_INCRIMINATE =
   /\b(?:i am|i'm|i’m|im|we are|we're|we’re)\s+(?:the\s+|a\s+|in the\s+)?(?:syndicate|mafia|killer|murderer|evil|scum)\b/i;
@@ -57,12 +58,17 @@ function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Whether `text` mentions `name`, allowing the bots' nickname and a short form. */
-export function mentionsName(text: string, name: string): boolean {
+/** Regex source matching a name, the bots' nickname for it, or a short form. */
+function nameForms(name: string): string {
   const forms = new Set([escape(name)]);
   if (name.length > 4) forms.add(escape(nickname(name)));
   if (name.length >= 6) forms.add(`${escape(name.slice(0, 4))}\\p{L}{0,${name.length - 4}}`);
-  const re = new RegExp(`(^|[^\\p{L}])(?:${[...forms].join('|')})(?:'s|’s)?($|[^\\p{L}])`, 'iu');
+  return `(?:${[...forms].join('|')})`;
+}
+
+/** Whether `text` mentions `name`, allowing the bots' nickname and a short form. */
+export function mentionsName(text: string, name: string): boolean {
+  const re = new RegExp(`(^|[^\\p{L}])${nameForms(name)}(?:'s|’s)?($|[^\\p{L}])`, 'iu');
   return re.test(text);
 }
 
@@ -72,10 +78,11 @@ function mentioned(text: string, view: PlayerView): Set<PlayerId> {
 
 /** True when `name` is only being addressed ("Bea, ..." or "..., Bea?"), not talked about. */
 function vocative(sentence: string, name: string): boolean {
-  const n = escape(name);
-  const lead = new RegExp(String.raw`^\W*${n}\s*[,:]`, 'i');
-  const tail = new RegExp(String.raw`,\s*${n}\W*$`, 'i');
-  return lead.test(sentence) || tail.test(sentence);
+  const n = nameForms(name);
+  const lead = new RegExp(String.raw`^[^\p{L}]*${n}\s*[,:]`, 'iu');
+  const tail = new RegExp(String.raw`,\s*${n}[^\p{L}]*$`, 'iu');
+  const aside = new RegExp(String.raw`,\s*${n}\s*,`, 'iu');
+  return lead.test(sentence) || tail.test(sentence) || aside.test(sentence);
 }
 
 function selfClaims(text: string): RoleId[] {
@@ -182,16 +189,37 @@ export function checkReply(text: string, ctx: GuardContext): GuardRule | null {
   for (const line of recentLines(view, channel, 8))
     for (const id of mentioned(line, view)) context.add(id);
   if (view.trial) context.add(view.trial.defendant);
+  // Partners in their own chat, and fellow ghosts in the dead chat, are fair to name.
+  if (channel === 'mafia') for (const m of you.teammates) context.add(m.id);
+  if (channel === 'dead') for (const p of view.players) if (!p.alive) context.add(p.id);
+  // The Mourner may overhear the dead chat, so dead Syndicate keep quiet about partners too.
+  const hidePartners = open || channel === 'dead';
+  const ended = view.phase.kind === 'ended';
+  const sentences = text.split(/(?<=[.!?…])\s+/);
+  const addressed = (n: string) => sentences.some((s) => vocative(s, n));
   for (const id of inText) {
     if (inDraft.has(id) || actIds.has(id)) continue;
-    if (open && livingMates.has(id)) return 'teammate-named';
-    if (!context.has(id)) return 'new-name';
+    if (hidePartners && livingMates.has(id)) return 'teammate-named';
+    // Simply addressing someone ("..., Bea?") is harmless; after the game anyone may be named.
+    if (!context.has(id) && !ended && !addressed(name(id))) return 'new-name';
   }
-  // Accusations (and Suspicious results) may only point where the draft points.
-  for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
+  // In the open, accusations and results may only point where the draft points, or
+  // repeat results the bot has already claimed in public.
+  const claimed = new Set<PlayerId>();
+  for (const e of view.events) {
+    if (
+      e.type === 'chat' &&
+      e.channel === 'public' &&
+      e.from === you.id &&
+      e.meta?.kind === 'claim'
+    )
+      for (const r of e.meta.results ?? []) claimed.add(r.target);
+  }
+  for (const sentence of open ? sentences : []) {
     if (!ACCUSING.test(sentence)) continue;
     for (const p of view.players) {
-      if (inDraft.has(p.id) || actIds.has(p.id) || !mentionsName(sentence, p.name)) continue;
+      if (inDraft.has(p.id) || actIds.has(p.id) || claimed.has(p.id)) continue;
+      if (!mentionsName(sentence, p.name)) continue;
       if (!vocative(sentence, p.name)) return 'new-accusation';
     }
   }
