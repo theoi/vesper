@@ -1,4 +1,5 @@
 import type { PlayerId, PlayerView } from '../../engine/index.ts';
+import { nightsOf } from '../director/history.ts';
 import { createDirector } from '../director/index.ts';
 import { h } from '../dom.ts';
 import { createChat } from '../hud/chat.ts';
@@ -63,7 +64,11 @@ export function gameFrame(ctx: UiContext): Frame {
   const letters = createLetters(ctx);
   const top = createTopBar(ctx, { openLetters: () => letters.open() });
   const prompt = createPromptBar(ctx, { pick: onPick, toggleWhisper: () => chat.toggleWhisper() });
-  const result = createResult(ctx);
+  const result = createResult(ctx, {
+    replay: () => {
+      if (view) director.replay(nightsOf(view));
+    },
+  });
   stage.onPick(onPick);
 
   const el = h(

@@ -66,6 +66,10 @@ export interface Stage extends StageApi {
   thread(a: PlayerId, b: PlayerId): void;
   /** Transient candle effects. */
   candle(id: PlayerId, fx: 'out' | 'flare' | 'dim' | 'lit'): void;
+  /** Light or put out a candle without ceremony (the curtain call's replay). */
+  setLit(id: PlayerId, lit: boolean): void;
+  /** Paint every candle from the current view again. */
+  repaint(): void;
   /** The trial inset: a close-up of the defendant beside the cloth. */
   inset(): Close | null;
   clearOver(): void;
@@ -84,7 +88,7 @@ function div(cls: string, text?: string): HTMLDivElement {
   return d;
 }
 
-const NIGHT_ACT: Record<NightActionKind, Act> = {
+export const NIGHT_ACT: Record<NightActionKind, Act> = {
   investigate: 'creep',
   watch: 'lantern',
   heal: 'heal',
@@ -99,7 +103,11 @@ const NIGHT_ACT: Record<NightActionKind, Act> = {
 };
 
 /** How far from the target a visitor stands, by what they do. */
-const NIGHT_GAP: Partial<Record<NightActionKind, number>> = { shoot: 16, watch: 9, guard: 5 };
+export const NIGHT_GAP: Partial<Record<NightActionKind, number>> = {
+  shoot: 16,
+  watch: 9,
+  guard: 5,
+};
 
 class ScrimStage implements Stage {
   readonly el: HTMLElement;
@@ -701,6 +709,17 @@ class ScrimStage implements Stage {
       return;
     }
     li.classList.toggle('dimmed', fx === 'dim');
+  }
+
+  setLit(id: PlayerId, lit: boolean): void {
+    const li = this.members.get(id)?.li;
+    if (!li) return;
+    li.classList.remove('snuff');
+    li.classList.toggle('is-dead', !lit);
+  }
+
+  repaint(): void {
+    if (this.view) this.paintCandles(this.view);
   }
 
   clearOver(): void {

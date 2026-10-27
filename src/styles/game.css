@@ -845,6 +845,70 @@
   color: #2e4a72;
 }
 
+.vx .vx-nights {
+  margin-top: 6px;
+  text-align: left;
+}
+
+.vx .vx-night {
+  border-top: 1px solid rgba(40, 28, 16, 0.25);
+}
+
+.vx .vx-night:last-child {
+  border-bottom: 1px solid rgba(40, 28, 16, 0.25);
+}
+
+.vx .vx-night summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 2px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.vx .vx-night summary::-webkit-details-marker {
+  display: none;
+}
+
+.vx .vx-night summary::before {
+  content: '▸';
+  color: #6b4f2c;
+  font-size: 12px;
+}
+
+.vx .vx-night[open] summary::before {
+  content: '▾';
+}
+
+.vx .vx-night-n {
+  font: 700 15px/1.2 var(--f-title);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vx .vx-night-d {
+  margin-left: auto;
+  color: #7a1c19;
+  font: italic 400 16px/1.2 var(--f-title);
+  text-align: right;
+}
+
+.vx .vx-night ol {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0 0 0 22px;
+  color: #2b1d10;
+  font: 400 15px/1.45 var(--f-title);
+}
+
+.vx .vx-night-quiet {
+  margin: 0 0 10px 22px;
+  color: #6b5a45;
+  font: italic 400 15px/1.4 var(--f-title);
+}
+
 .vx .vx-curtain-actions {
   display: flex;
   flex-wrap: wrap;

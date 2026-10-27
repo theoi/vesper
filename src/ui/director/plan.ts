@@ -8,6 +8,7 @@ import {
   type DeathCause,
   type GameEvent,
   type GameResult,
+  type NightRecord,
   type NightResult,
   type PlayerId,
   type PlayerView,
@@ -64,7 +65,9 @@ export type SeqSpec =
     }
   | { id: 'death'; death: DeathInfo }
   | { id: 'notes'; notes: Note[] }
-  | { id: 'finale'; outcome: GameResult['outcome']; won: boolean };
+  | { id: 'finale'; outcome: GameResult['outcome']; won: boolean }
+  /** The curtain call's "what really happened": every night replayed in shadow, on request. */
+  | { id: 'replay'; nights: NightRecord[]; outcome: GameResult['outcome']; won: boolean };
 
 export type SeqId = SeqSpec['id'];
 
