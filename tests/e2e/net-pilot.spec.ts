@@ -31,6 +31,7 @@ const transports = (
 ).split(',');
 const trials = Number(process.env.PILOT_TRIALS ?? 10);
 const clientCount = Number(process.env.PILOT_CLIENTS ?? 2);
+const joinDelayMs = Number(process.env.PILOT_JOIN_DELAY_MS ?? 0);
 const connectTimeout = 30_000;
 
 const readState = (page: Page) =>
@@ -60,6 +61,7 @@ async function runTrial(browser: Browser, transport: string, n: number): Promise
       .poll(async () => (await readState(host)).signalingReadyAt, { timeout: 20_000 })
       .not.toBeNull();
     result.hostSignalingMs = (await readState(host)).signalingReadyAt;
+    if (joinDelayMs > 0) await host.waitForTimeout(joinDelayMs);
 
     const started = Date.now();
     const clients = await Promise.all(clientCtxs.map((c) => c.newPage()));
@@ -129,7 +131,7 @@ async function runTrial(browser: Browser, transport: string, n: number): Promise
 
 for (const transport of transports) {
   test(`pilot ${transport} @pilot`, async ({ browser }) => {
-    test.setTimeout(trials * 70_000);
+    test.setTimeout(trials * (70_000 + joinDelayMs));
     const results: Trial[] = [];
     for (let n = 1; n <= trials; n++) {
       const r = await runTrial(browser, transport, n);
@@ -137,7 +139,8 @@ for (const transport of transports) {
       console.log(JSON.stringify(r));
     }
     mkdirSync('test-results/pilot', { recursive: true });
-    writeFileSync(`test-results/pilot/${transport}.json`, JSON.stringify(results, null, 2));
+    const tag = process.env.PILOT_TAG ? `-${process.env.PILOT_TAG}` : '';
+    writeFileSync(`test-results/pilot/${transport}${tag}.json`, JSON.stringify(results, null, 2));
     expect(results.some((r) => r.ok)).toBe(true);
   });
 }
