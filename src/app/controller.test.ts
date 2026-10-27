@@ -46,7 +46,7 @@ function makeController(net = createMemoryNetwork(), store = memoryStore(), stat
   const anthropic = fakeAnthropic(status);
   const controller = new AppController({
     transport: () => net,
-    baseUrl: 'https://theoi.github.io/vesper/',
+    pageUrl: 'https://theoi.github.io/vesper/',
     storage: store,
     claudeFetch: anthropic.fetch,
   });
@@ -213,7 +213,7 @@ describe('host resume', () => {
   ) {
     return new AppController({
       transport: () => net,
-      baseUrl: 'https://theoi.github.io/vesper/',
+      pageUrl: 'https://theoi.github.io/vesper/',
       storage: memoryStore(),
       hostStore,
       buildId,
@@ -277,7 +277,7 @@ describe('rematch', () => {
     const anthropic = fakeAnthropic();
     const c = new AppController({
       transport: () => net,
-      baseUrl: 'https://theoi.github.io/vesper/',
+      pageUrl: 'https://theoi.github.io/vesper/',
       storage: memoryStore(),
       claudeFetch: anthropic.fetch,
       claudeLimits: { maxCallsPerGame: 4 },

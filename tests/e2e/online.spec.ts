@@ -6,6 +6,7 @@ import {
   closeAll,
   hostRoom,
   hostSecrets,
+  joinByLink,
   joinRoom,
   logLines,
   openPlayer,
@@ -38,7 +39,12 @@ test.describe('online play @online', () => {
     const code = await hostRoom(host);
     expect(code).toMatch(/^[A-Z2-9]{5}$/);
     await expect(host.page.getByTestId('room-link')).toHaveValue(new RegExp(`room=${code}`));
-    await joinRoom(ari, code);
+    // Ari opens the host's own link, so she lands on the host's UI.
+    await joinByLink(ari, await host.page.getByTestId('room-link').inputValue());
+    await expect(ari.page.locator('html')).toHaveAttribute(
+      'data-ui',
+      (await host.page.locator('html').getAttribute('data-ui')) ?? '',
+    );
     await joinRoom(bo, code);
 
     for (const p of players) {

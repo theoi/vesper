@@ -60,6 +60,16 @@ describe('room codes', () => {
     expect(roomFromUrl('https://theoi.github.io/vesper/#room=kx7qm')).toBe('KX7QM');
     expect(roomFromUrl('https://theoi.github.io/vesper/')).toBeNull();
   });
+
+  it('keeps the host page’s ui and gfx in share links, and nothing else', () => {
+    const page = 'https://theoi.github.io/vesper/?net=peerjs&ui=v2&room=AAAAA&sw=0&gfx=lite#x';
+    expect(roomLink('KX7QM', page)).toBe(
+      'https://theoi.github.io/vesper/?room=KX7QM&ui=v2&gfx=lite',
+    );
+    expect(roomLink('KX7QM', 'https://theoi.github.io/vesper/?ui=shell')).toBe(
+      'https://theoi.github.io/vesper/?room=KX7QM&ui=shell',
+    );
+  });
 });
 
 describe('parseClientMessage', () => {

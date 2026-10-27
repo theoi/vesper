@@ -40,7 +40,7 @@ const controller = new AppController({
     Number.isInteger(claudeCalls) && claudeCalls > 0 && claudeCalls < DEFAULT_LIMITS.maxCallsPerGame
       ? { maxCallsPerGame: claudeCalls }
       : {},
-  baseUrl: location.origin + location.pathname,
+  pageUrl: location.href,
   linkCode: roomFromUrl(),
   recordNet,
   // Per tab, so a reload resumes the room but a second tab doesn't fork it.

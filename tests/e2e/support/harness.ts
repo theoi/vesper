@@ -71,6 +71,21 @@ export async function hostRoom(
 /** Open a share link and join from the home screen. */
 export async function joinRoom(p: Player, code: string): Promise<void> {
   await p.page.goto(appUrl({ room: code }));
+  await joinFromHome(p, code);
+}
+
+/**
+ * Join through the exact link the host's lobby shows, as a friend would.
+ * Only the test's `?net=` override is added, so a forced transport stays forced.
+ */
+export async function joinByLink(p: Player, link: string): Promise<void> {
+  const url = new URL(link);
+  if (process.env.NET) url.searchParams.set('net', process.env.NET);
+  await p.page.goto(url.toString());
+  await joinFromHome(p, url.searchParams.get('room') ?? '');
+}
+
+async function joinFromHome(p: Player, code: string): Promise<void> {
   await expectUi(p);
   await expect(p.page.getByTestId('code-input')).toHaveValue(code);
   await p.page.getByTestId('name-input').fill(p.name);

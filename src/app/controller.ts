@@ -78,8 +78,8 @@ export interface ClaudeState {
 
 export interface ControllerOptions {
   transport: () => Transport;
-  /** Base URL for share links (defaults to the current page). */
-  baseUrl?: string;
+  /** The page's URL; share links keep its origin, path, and `LINK_PARAMS` (defaults to the current page). */
+  pageUrl?: string;
   linkCode?: string | null;
   /** Record every message received from the host (tests and debugging). */
   recordNet?: boolean;
@@ -299,7 +299,7 @@ export class AppController {
 
   private onSnapshot(snap: SessionSnapshot): void {
     const link =
-      snap.isHost && snap.network.state !== 'open' ? null : roomLink(snap.code, this.opts.baseUrl);
+      snap.isHost && snap.network.state !== 'open' ? null : roomLink(snap.code, this.opts.pageUrl);
     this.set({ session: snap, link, claude: this.claudeState() });
     if (snap.status === 'closed' || snap.status === 'error') this.opts.onRoomUrl?.(null);
   }

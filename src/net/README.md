@@ -11,7 +11,7 @@ Host-authoritative online rooms over WebRTC. The host's browser runs the engine 
 - `session.ts`: `SessionSnapshot` and `GameSession` (shared by host and client), and `ViewChannel`, which sends a player only what changed (new events plus the top-level view fields that differ; `mergeView` folds these patches back into the full view) and renumbers events per player so gaps in `seq` don't reveal that hidden events happened. A join, rejoin, or new game gets the whole view.
 - `protocol.ts`: the wire messages and validation of untrusted client input.
 - `lobby.ts`: lobby view, names, and game config from seats and settings.
-- `room.ts`: room codes (5 characters, no look-alikes) and share links (`?room=CODE`).
+- `room.ts`: room codes (5 characters, no look-alikes) and share links (`?room=CODE`). A link keeps the host page's `ui` and `gfx` parameters (`LINK_PARAMS`), so friends open the game the way the host did.
 - `transport.ts`: the transport interface and `NetError` codes with player-facing messages.
 - `peerjs.ts` (primary): the host registers `vesper-room-<CODE>` on the public PeerJS server; clients connect straight to it. Public STUN only, no TURN. Messages travel as JSON text: PeerJS's default binary packing took about 1 ms per 16-seat view, roughly 25 times JSON.stringify.
 - `trystero.ts` (fallback): Trystero over public Nostr relays, used when the PeerJS server can't be reached. The relays are pinned (`NOSTR_RELAYS`): Trystero's own pick for our app id included relays that were down, blocked its event kinds, or rate-limited. `tests/e2e/nostr-relays.spec.ts` checks the pinned ones.
