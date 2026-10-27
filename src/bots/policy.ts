@@ -3,6 +3,7 @@ import { ROLES } from '../engine/roles.ts';
 import type { ClaimedResult, NightResult, PlayerId, PlayerView, RoleId } from '../engine/types.ts';
 import {
   claimValue,
+  holdsClear,
   isAlive,
   livingOthers,
   maxCopies,
@@ -210,9 +211,9 @@ function tallies(m: Mind): Map<PlayerId, number> {
 /** Who to vote for right now, or null to hold. */
 export function voteChoice(m: Mind): PlayerId | null {
   const v = m.view;
-  const options = v.allowed.voteTargets;
-  if (options.length === 0) return null;
   const mem = m.mem;
+  const options = v.allowed.voteTargets.filter((id) => !holdsClear(v, mem, id));
+  if (options.length === 0) return null;
   const side = sideNow(m);
   const tally = tallies(m);
   const need = v.voteThreshold;
@@ -255,6 +256,7 @@ export function ballotChoice(m: Mind): 'guilty' | 'innocent' | 'abstain' {
   const side = sideNow(m);
   if (side === 'mafia') {
     if (isTeammate(m, d)) return m.rng.chance(0.08) ? 'guilty' : 'innocent';
+    if (holdsClear(v, mem, d)) return 'abstain';
     return m.rng.chance(0.85) ? 'guilty' : 'abstain';
   }
   if (side === 'cutthroat') return m.rng.chance(0.85) ? 'guilty' : 'abstain';
@@ -262,6 +264,7 @@ export function ballotChoice(m: Mind): 'guilty' | 'innocent' | 'abstain' {
   if (side === 'accuser' && d === v.you.accuserTarget) return 'guilty';
   if (mem.known[d] === 'hostile') return 'guilty';
   if (mem.known[d] === 'town') return 'innocent';
+  if (holdsClear(v, mem, d)) return 'innocent';
   let s = score(mem, d);
   const claim = mem.claims[d];
   if (claim && possible(v, claim) && (mem.suspicion[d] ?? 0) < 3)
@@ -351,7 +354,12 @@ export function claimResults(m: Mind, role: RoleId): ClaimedResult[] {
             1,
           );
     if (!target) break;
-    mem.fakeResults.push({ night, target, finding: m.rng.chance(0.6) ? 'suspicious' : 'clear' });
+    const framing = sideNow(m) === 'accuser' && target === v.you.accuserTarget;
+    mem.fakeResults.push({
+      night,
+      target,
+      finding: framing || m.rng.chance(0.6) ? 'suspicious' : 'clear',
+    });
   }
   return mem.fakeResults.filter((r) => isAlive(v, r.target) || r.finding === 'suspicious');
 }
@@ -448,9 +456,16 @@ export function writeWill(m: Mind): string {
       lines.push(`N${r.night}: saved ${name} from an attack`);
     }
   }
-  const top = topSuspect(m);
+  const top = topSuspect(m, heldClear(m));
   if (top && score(mem, top) > 2) lines.push(`Suspect: ${nameOf(v, top)}.`);
   return lines.join('\n');
+}
+
+/** Living players we cleared and should not turn on (see `holdsClear`). */
+export function heldClear(m: Mind): PlayerId[] {
+  return livingOthers(m.view)
+    .filter((p) => holdsClear(m.view, m.mem, p.id))
+    .map((p) => p.id);
 }
 
 export function topSuspect(m: Mind, exclude: PlayerId[] = []): PlayerId | null {
