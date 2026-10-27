@@ -103,6 +103,26 @@ async function chooseUi(): Promise<{ name: 'v2' | 'shell'; mount: MountUi }> {
   return { name: 'shell', mount: mountShell };
 }
 
+// A service worker keeps hashed images, sounds, and code (see assetCache.ts),
+// because GitHub Pages lets browsers cache them for only ten minutes.
+// `?sw=0` removes it and its cache, for debugging.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  if (params.get('sw') === '0') {
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())));
+    void caches
+      .keys()
+      .then((names) => names.filter((n) => n.startsWith('vesper-')).map((n) => caches.delete(n)));
+  } else {
+    addEventListener('load', () => {
+      navigator.serviceWorker
+        .register(`${import.meta.env.BASE_URL}sw.js`)
+        .catch((e: unknown) => console.warn('The asset cache is unavailable.', e));
+    });
+  }
+}
+
 const app = document.querySelector<HTMLElement>('#app');
 if (app) {
   void chooseUi().then(({ name, mount }) => {
