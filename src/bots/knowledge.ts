@@ -62,6 +62,31 @@ export function score(mem: BotMemory, id: PlayerId): number {
   return base;
 }
 
+/** Suspicion a player must reach before we act against them despite a Clear reading. */
+export const OVER_CLEAR = 5;
+
+/** True if this bot read `id` Clear itself, or calls them Clear in its fake Augur story. */
+export function clearedByMe(view: PlayerView, mem: BotMemory, id: PlayerId): boolean {
+  if (
+    view.you.nightResults.some(
+      ({ result: r }) => r.kind === 'investigation' && r.target === id && r.finding === 'clear',
+    )
+  )
+    return true;
+  // Fake results exist only once the bot has made, or is about to make, an Augur claim.
+  return mem.fakeResults.some((r) => r.target === id && r.finding === 'clear');
+}
+
+/**
+ * True if we should not accuse or vote against `id` because we cleared them. A
+ * real reading gives way to strong evidence (the Patron reads Clear); a bluffer
+ * never turns on someone its own fake claim cleared.
+ */
+export function holdsClear(view: PlayerView, mem: BotMemory, id: PlayerId): boolean {
+  if (!clearedByMe(view, mem, id)) return false;
+  return sideOf(mem.role ?? view.you.role) !== 'town' || score(mem, id) < OVER_CLEAR;
+}
+
 /** How much this bot believes `id`'s claims (0..1). */
 export function cred(bot: BotState, mem: BotMemory, id: PlayerId): number {
   const k = mem.known[id];

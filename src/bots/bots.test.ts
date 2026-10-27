@@ -2,7 +2,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyIntent } from '../engine/game.ts';
-import { act, pinnedGame, runNight, start, until, type Driver } from '../engine/testkit.ts';
+import {
+  act,
+  pinnedGame,
+  putOnTrial,
+  runNight,
+  start,
+  until,
+  type Driver,
+} from '../engine/testkit.ts';
 import type { RoleId } from '../engine/types.ts';
 import { viewFor } from '../engine/view.ts';
 import {
@@ -232,6 +240,113 @@ describe('bot decisions', () => {
   });
 });
 
+describe('Clear readings', () => {
+  // Ada (Augur) reads Bea Clear on night 1. A Patron is in the game, so Clear is not proof.
+  const SEVEN: RoleId[] = [
+    'augur',
+    'resident',
+    'resident',
+    'resident',
+    'resident',
+    'patron',
+    'hatchet',
+  ];
+  const dawn2 = (read = 'p1') => runNight(longGame(SEVEN), { p0: read });
+
+  /**
+   * A bot that has taken in everything so far, with its memory then adjusted.
+   * Prime it a phase early: bots plan when a phase starts.
+   */
+  function primed(
+    d: Driver,
+    id: string,
+    seed: number,
+    personality: string,
+    patch: (m: BotState['memory']) => void,
+  ): BotState {
+    const view = viewFor(d.state, id);
+    const bot = structuredClone(
+      decideBot(createBot(id, seed, { personality }), view, d.state.phase.startedAt).bot,
+    );
+    patch(bot.memory);
+    return bot;
+  }
+
+  const accusations = (d: Driver, from: string, target: string): string[] =>
+    d.events.flatMap((e) =>
+      e.type === 'chat' && e.from === from && e.meta?.kind === 'accuse' && e.meta.target === target
+        ? [e.text]
+        : [],
+    );
+
+  /** Accusations of Bea in discussion, and whether the bot voted Bea, over a dozen seeds. */
+  function turnsOnBea(dawn: Driver, id: string, patch: (m: BotState['memory']) => void) {
+    let accused = 0;
+    let votes = 0;
+    const d = until(dawn, 'discussion');
+    for (let seed = 0; seed < 12; seed++) {
+      const talk = drive(d, primed(dawn, id, seed, 'hothead', patch), 59_000);
+      accused += accusations(talk.d, id, 'p1').length;
+      const vote = drive(until(talk.d, 'voting'), talk.bot, 39_000);
+      if (vote.d.events.some((e) => e.type === 'vote' && e.voter === id && e.target === 'p1'))
+        votes++;
+    }
+    return { accused, votes };
+  }
+
+  it('the Augur does not accuse or vote a player it read Clear on weak suspicion', () => {
+    const weak = (m: BotState['memory']) => {
+      m.suspicion['p1'] = 4;
+    };
+    // Control: the same suspicion without the Clear reading gets Bea accused and voted.
+    const control = turnsOnBea(dawn2('p2'), 'p0', weak);
+    expect(control.accused).toBeGreaterThan(0);
+    expect(control.votes).toBeGreaterThan(0);
+    expect(turnsOnBea(dawn2('p1'), 'p0', weak)).toEqual({ accused: 0, votes: 0 });
+  });
+
+  it('the Augur votes innocent on a player it read Clear unless the case is strong', () => {
+    const ballot = (suspicion: number, seed: number) => {
+      const defense = until(putOnTrial(dawn2('p1'), 'p1', ['p2', 'p3', 'p4', 'p5']), 'defense');
+      const bot = primed(defense, 'p0', seed, 'hothead', (m) => {
+        m.suspicion['p1'] = suspicion;
+      });
+      const r = drive(until(defense, 'judgment'), bot, 30_000);
+      return r.d.state.trial?.ballots['p0'];
+    };
+    for (let seed = 0; seed < 8; seed++) expect(ballot(3, seed)).toBe('innocent');
+    expect([0, 1, 2, 3].map((seed) => ballot(30, seed))).toContain('guilty');
+  });
+
+  it('a claimed Augur turning on a player it read Clear explains that the Patron reads Clear', () => {
+    let texts: string[] = [];
+    const dawn = dawn2('p1');
+    const d = until(dawn, 'discussion');
+    for (let seed = 0; seed < 12; seed++) {
+      const bot = primed(dawn, 'p0', seed, 'hothead', (m) => {
+        m.suspicion['p1'] = 9;
+        m.claimed = 'augur';
+      });
+      texts = texts.concat(accusations(drive(d, bot, 59_000).d, 'p0', 'p1'));
+    }
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) expect(text).toMatch(/rule out the patron/i);
+  });
+
+  it('a Syndicate bot never turns on a player its fake Augur claim cleared', () => {
+    const suspected = (m: BotState['memory']) => {
+      m.suspicion['p1'] = 9;
+    };
+    const control = turnsOnBea(dawn2(), 'p5', suspected);
+    expect(control.accused + control.votes).toBeGreaterThan(0);
+    const story = (m: BotState['memory']) => {
+      suspected(m);
+      m.claimed = 'augur';
+      m.fakeResults = [{ night: 1, target: 'p1', finding: 'clear' }];
+    };
+    expect(turnsOnBea(dawn2(), 'p5', story)).toEqual({ accused: 0, votes: 0 });
+  });
+});
 describe('reading human chat', () => {
   const players = ['Ada', 'Bea', 'Cal', 'Dov'].map((name, i) => ({
     id: `p${i}`,

@@ -9,7 +9,16 @@ import type {
   RoleId,
   SpeechAct,
 } from '../engine/types.ts';
-import { bump, cred, knowsInnocent, maxCopies, normalize, possible, sideOf } from './knowledge.ts';
+import {
+  bump,
+  cred,
+  holdsClear,
+  knowsInnocent,
+  maxCopies,
+  normalize,
+  possible,
+  sideOf,
+} from './knowledge.ts';
 import { parseLine, parseWill } from './parse.ts';
 import type { BotMemory, BotState, Topic } from './types.ts';
 
@@ -289,7 +298,7 @@ export function onClaim(m: Mind, from: PlayerId, role: RoleId, results: ClaimedR
   }
   mem.claimResults[from] = prior;
   if (first && POWER.includes(role)) {
-    const doubt = (mem.suspicion[from] ?? 0) > 2;
+    const doubt = (mem.suspicion[from] ?? 0) > 2 && !holdsClear(m.view, mem, from);
     later(
       m,
       `claimReact:${from}`,

@@ -6,7 +6,16 @@ import { Rng } from '../engine/rng.ts';
 import { ROLES } from '../engine/roles.ts';
 import type { Intent, PlayerId, PlayerView, SpeechAct } from '../engine/types.ts';
 import { DEATH_NOTES, render, type Category, type RenderInput } from './lines.ts';
-import { isAlive, livingOthers, nameOf, normalize, possible, score } from './knowledge.ts';
+import {
+  clearedByMe,
+  holdsClear,
+  isAlive,
+  livingOthers,
+  nameOf,
+  normalize,
+  possible,
+  score,
+} from './knowledge.ts';
 import { ingest, type Mind } from './memory.ts';
 import {
   ballotChoice,
@@ -14,6 +23,7 @@ import {
   claimNow,
   claimResults,
   describeResults,
+  heldClear,
   nightChoice,
   shouldReveal,
   sideNow,
@@ -301,7 +311,7 @@ function planDiscussion(t: Turn): void {
   ) {
     q.push({ t: 'accuse', target: v.you.accuserTarget, hard: t.rng.chance(p.boldness) });
   }
-  const top = topSuspect(t);
+  const top = topSuspect(t, heldClear(t));
   if (top) {
     const s =
       side === 'mafia' || side === 'cutthroat' ? (mem.suspicion[top] ?? 0) : score(mem, top);
@@ -342,7 +352,7 @@ function planDefense(t: Turn): void {
   if (claim && t.view.you.role !== 'magistrate')
     q.push({ t: 'claim', role: claim, results: claimResults(t, claim) });
   const wagon = Object.entries(mem.wagons).find(([d]) => d === t.view.you.id)?.[1] ?? [];
-  const starter = wagon.find((id) => isAlive(t.view, id));
+  const starter = wagon.find((id) => isAlive(t.view, id) && !holdsClear(t.view, mem, id));
   if (starter && t.rng.chance(0.5)) q.push({ t: 'accuse', target: starter, hard: false });
   mem.queue = q;
   mem.nextChatAt = t.view.phase.startedAt + Math.min(duration(t) * 0.15, 1000);
@@ -371,7 +381,7 @@ function planDead(t: Turn): void {
     if (t.rng.chance(0.7)) mem.queue.push({ t: 'deadIntro' });
   }
   if (v.phase.kind === 'night' && possible(v, 'mourner')) {
-    const top = topSuspect(t);
+    const top = topSuspect(t, heldClear(t));
     if (top && score(mem, top) > 2 && sideNow(t) === 'town' && t.rng.chance(0.6)) {
       const results = claimResults(t, v.you.role).filter(
         (r) => r.finding === 'suspicious' && isAlive(v, r.target),
@@ -616,9 +626,16 @@ function say(t: Turn, category: Category, input: RenderInput, act: SpeechAct): L
 }
 
 function reasonText(t: Turn, target: PlayerId): string {
+  // A claimed Augur turning on someone it called Clear owes the table an explanation.
+  if (t.mem.claimed === 'augur' && possible(t.view, 'patron') && clearedByMe(t.view, t.mem, target))
+    return `A Clear reading can't rule out the Patron. ${baseReason(t, target, true)}`;
+  return baseReason(t, target, false);
+}
+
+function baseReason(t: Turn, target: PlayerId, specific: boolean): string {
   const v = t.view;
   const list: Reason[] = t.mem.reasons[target] ?? [];
-  const r = list[list.length - 1];
+  const r = (specific ? list.filter((x) => x.k !== 'gut') : list).at(-1) ?? list.at(-1);
   const x = r?.x ? nameOf(v, r.x) : '';
   switch (r?.k) {
     case 'readSuspicious':
