@@ -25,6 +25,7 @@
     "previews",
     "labs",
     "scripts",
+    "relay/src",
     "vite.config.ts",
     "playwright.config.ts"
   ]

@@ -1,0 +1,36 @@
+{
+  "name": "vesper-claude-relay",
+  "private": true,
+  "description": "A small Cloudflare Worker that lets the Vesper game call Claude with a key that never reaches the browser.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ANTHROPIC_API_KEY": {
+        "description": "Your Anthropic API key (it starts with `sk-ant-`). Create one at [console.anthropic.com](https://console.anthropic.com/settings/keys). It stays in this Worker; players never see it."
+      },
+      "RELAY_PASSPHRASE": {
+        "description": "A passphrase you make up. You will paste it into the game, so only you can use this relay. Use a long random string, for example from `openssl rand -hex 16`."
+      },
+      "ALLOWED_ORIGINS": {
+        "description": "Websites allowed to use this relay, separated by commas. Keep `https://theoi.github.io` to play on the official site."
+      },
+      "ALLOWED_MODELS": {
+        "description": "Claude models the relay will forward, separated by commas."
+      },
+      "MAX_TOKENS": {
+        "description": "The most output tokens one request may ask for. The game asks for about 120."
+      },
+      "MAX_BODY_BYTES": {
+        "description": "The largest request the relay accepts, in bytes."
+      }
+    }
+  },
+  "devDependencies": {
+    "wrangler": "^4.153.0"
+  }
+}

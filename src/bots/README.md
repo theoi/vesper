@@ -38,13 +38,13 @@ Each `BotSpeech` carries `intent` (scripted text, ready to apply), `act` (a `Spe
 
 ## Claude chat (`llm/`)
 
-`src/bots/llm/` is that chat layer. It calls the Anthropic Messages API straight from the host's browser with the key the host enters, and it is the only code in this folder that touches the network (through an injectable `fetch`).
+`src/bots/llm/` is that chat layer. It calls the Anthropic Messages API straight from the host's browser with the key the host enters, and it is the only code in this folder that touches the network (through an injectable `fetch`). In relay mode (`configure({ mode: 'relay', relayUrl, relayPassphrase })`), it sends requests to the host's own relay (`relay/`, a Cloudflare Worker) with an `x-relay-passphrase` header and no key; the relay adds the key on the server and passes Anthropic's replies through, and its own refusals (`relay_auth`, `relay_origin`, `relay_config`, `relay_model`) map to the `relay-error` status or the model message.
 
 ```ts
 import { ChatLayer, loadSettings, saveSettings, voiceSpeech } from '../bots/llm/index.ts';
 
 const chat = new ChatLayer(loadSettings(localStorage)); // key, model, on/off
-chat.subscribe((s) => showClaudeStatus(s.state, s.detail)); // off | ok | invalid-key | browser-blocked | rate-limited | degraded
+chat.subscribe((s) => showClaudeStatus(s.state, s.detail)); // off | ok | invalid-key | browser-blocked | relay-error | rate-limited | degraded
 chat.configure({ apiKey, model: 'claude-haiku-5-5', enabled: true }); // from the settings screen
 saveSettings(localStorage, { apiKey, model }, rememberKey); // the key is stored only if the host asks
 await chat.check(); // optional "Test key" button: one tiny request

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vesper-claude-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  // Requests carry the relay passphrase in a header, so keep request logging off.
+  "observability": { "enabled": false },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://theoi.github.io",
+    "ALLOWED_MODELS": "claude-haiku-5-5",
+    "MAX_TOKENS": "300",
+    "MAX_BODY_BYTES": "65536",
+  },
+  // A rough abuse guard: about 60 requests a minute per Cloudflare location.
+  // One game asks for at most 45 a minute.
+  "ratelimits": [
+    {
+      "name": "LIMITER",
+      "namespace_id": "4207",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
+}

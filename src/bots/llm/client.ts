@@ -1,7 +1,9 @@
 /**
  * Minimal Anthropic Messages API client for the browser (and Node 24, which has
  * fetch). The caller supplies the key; it is sent only to Anthropic, in a
- * request header, and never appears in returned errors.
+ * request header, and never appears in returned errors. In relay mode the
+ * request goes to the host's own relay (`relay/` in this repo) with a
+ * passphrase instead, and the relay adds the key on the server.
  */
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -10,6 +12,43 @@ export const ANTHROPIC_VERSION = '2026-10-21';
 export const DEFAULT_MODEL = 'claude-haiku-5-5';
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+
+/** The host's relay: it holds the Anthropic key and checks this passphrase. */
+export interface RelayTarget {
+  url: string;
+  passphrase: string;
+}
+
+export const RELAY_PASSPHRASE_HEADER = 'x-relay-passphrase';
+
+/**
+ * The relay's Messages endpoint for the URL the host pasted (with or without
+ * `/v1/messages`), or null if it isn't a usable URL. Plain http is allowed
+ * only for a relay on this computer.
+ */
+export function relayEndpoint(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return null;
+  if (u.username || u.password) return null;
+  u.search = '';
+  u.hash = '';
+  u.pathname = `${u.pathname.replace(/\/+$/, '').replace(/\/v1\/messages$/, '')}/v1/messages`;
+  return u.toString();
+}
+
+export function relayHeaders(passphrase: string): Record<string, string> {
+  return {
+    'content-type': 'application/json',
+    'anthropic-version': ANTHROPIC_VERSION,
+    [RELAY_PASSPHRASE_HEADER]: passphrase,
+  };
+}
 
 export interface Usage {
   inputTokens: number;
@@ -39,6 +78,9 @@ export type CallErrorKind =
   | 'bad-param' // the model rejected `thinking` or `output_config`
   | 'bad-request'
   | 'server' // 5xx and 529 overloaded
+  | 'relay-auth' // the relay rejected the passphrase
+  | 'relay-origin' // the relay does not accept requests from this site
+  | 'relay-config' // the relay is missing its key or passphrase secret
   | 'network'
   | 'timeout'
   | 'aborted';
@@ -112,6 +154,12 @@ function classify(res: Response, body: ApiErrorBody, now: number): CallError {
   const type = body.error?.type ?? '';
   const raw = body.error?.message ?? '';
   const message = `${status} ${type}${raw ? `: ${raw.slice(0, 160)}` : ''}`.trim();
+  // Errors the Vesper relay adds on top of Anthropic's own.
+  if (type === 'relay_auth') return { kind: 'relay-auth', status, message };
+  if (type === 'relay_origin') return { kind: 'relay-origin', status, message };
+  if (type === 'relay_config') return { kind: 'relay-config', status, message };
+  if (type === 'relay_model') return { kind: 'model', status, message };
+  if (type === 'relay_too_large') return { kind: 'bad-request', status, message };
   if (status >= 400 && status < 500 && status !== 429 && BROWSER_BLOCKED.test(raw))
     return { kind: 'browser-blocked', status, message };
   if (status === 401) return { kind: 'invalid-key', status, message };
@@ -135,10 +183,10 @@ function classify(res: Response, body: ApiErrorBody, now: number): CallError {
   return { kind: 'server', status, message };
 }
 
-/** Send one Messages request. Never throws. */
+/** Send one Messages request, to Anthropic with a key or to a relay. Never throws. */
 export async function callClaude(
   fetchFn: FetchLike,
-  apiKey: string,
+  credential: string | RelayTarget,
   req: CallRequest,
   opts: {
     timeoutMs: number;
@@ -161,16 +209,20 @@ export async function callClaude(
   );
   const onAbort = () => ctrl.abort();
   opts.signal?.addEventListener('abort', onAbort, { once: true });
+  const relay = typeof credential === 'string' ? null : credential;
+  const secret = relay ? relay.passphrase : (credential as string);
   const fail = (error: CallError): CallOutcome => ({
     ok: false,
-    error: { ...error, message: redact(error.message, apiKey) },
+    error: { ...error, message: redact(error.message, secret) },
     ms: clock() - t0,
   });
   try {
     if (opts.signal?.aborted) return fail({ kind: 'aborted', message: 'aborted' });
-    const res = await fetchFn(opts.url ?? ANTHROPIC_URL, {
+    const url = relay ? relayEndpoint(relay.url) : (opts.url ?? ANTHROPIC_URL);
+    if (!url) return fail({ kind: 'relay-config', message: 'not a usable relay URL' });
+    const res = await fetchFn(url, {
       method: 'POST',
-      headers: requestHeaders(apiKey, opts.workspaceId),
+      headers: relay ? relayHeaders(relay.passphrase) : requestHeaders(secret, opts.workspaceId),
       body: JSON.stringify(requestBody(req)),
       signal: ctrl.signal,
     });

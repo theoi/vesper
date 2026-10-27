@@ -1,0 +1,4 @@
+# Secrets for the relay. For local runs, copy this file to .dev.vars and fill it in.
+# When deployed, set them with `npx wrangler secret put NAME` (or on the Deploy to Cloudflare page).
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+RELAY_PASSPHRASE=make-up-a-long-random-passphrase

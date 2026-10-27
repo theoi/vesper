@@ -5,6 +5,7 @@ import {
   loadSettings,
   saveSettings,
   type ChatLimits,
+  type ChatMode,
   type ChatStatus,
   type FetchLike,
   type KeyValueStore,
@@ -53,8 +54,16 @@ export interface AppState {
 
 export interface ClaudeState {
   status: ChatStatus;
+  /** `key`: this browser calls Anthropic with the host's key. `relay`: the host's relay holds the key. */
+  mode: ChatMode;
   hasKey: boolean;
-  /** The key is stored in this browser's localStorage (the host chose "remember"). */
+  /** A relay URL and passphrase are set. */
+  hasRelay: boolean;
+  /** The relay's address (not secret on its own; the passphrase never appears here). */
+  relayUrl: string | null;
+  /** The current mode has what it needs to call Claude. */
+  ready: boolean;
+  /** The current mode's key or passphrase is stored in this browser's localStorage (the host chose "remember"). */
   remembered: boolean;
   enabled: boolean;
   model: string;
@@ -170,7 +179,7 @@ export class AppController {
         const reason = r.rule ? `guardrail:${r.rule}` : r.reason;
         return { text: r.text, source: r.source, ...(reason ? { reason } : {}) };
       },
-      shouldRewrite: () => this.chatLayer.settings.hasKey && this.chatLayer.settings.enabled,
+      shouldRewrite: () => this.chatLayer.settings.ready && this.chatLayer.settings.enabled,
       onGameStart: () => {
         this.chatLayer.newGame();
         this.chatLayer.resetMetrics();
@@ -336,15 +345,34 @@ export class AppController {
   // ---------------------------------------------------------------------------
 
   /**
-   * Use this Anthropic API key for bot chat. It stays in this browser: in
-   * memory, and in localStorage only if `remember` is true. It is never sent
-   * to other players.
+   * Use this Anthropic API key for bot chat (direct mode). It stays in this
+   * browser: in memory, and in localStorage only if `remember` is true. It is
+   * never sent to other players.
    */
   setClaudeKey(key: string | null, opts: { remember?: boolean } = {}): void {
-    this.chatLayer.configure({ apiKey: key });
+    this.chatLayer.configure({ apiKey: key, mode: 'key' });
     if (this.opts.storage) {
-      saveSettings(this.opts.storage, { apiKey: key }, opts.remember ?? false);
+      saveSettings(this.opts.storage, { apiKey: key, mode: 'key' }, opts.remember ?? false);
     }
+    this.refreshClaude();
+  }
+
+  /**
+   * Call Claude through the host's own relay (see relay/README.md). The relay
+   * holds the Anthropic key; this browser sends only the passphrase, and only
+   * to the relay. Stored in localStorage only if `remember` is true.
+   */
+  setClaudeRelay(url: string, passphrase: string, opts: { remember?: boolean } = {}): void {
+    const relay = { mode: 'relay' as const, relayUrl: url, relayPassphrase: passphrase };
+    this.chatLayer.configure(relay);
+    if (this.opts.storage) saveSettings(this.opts.storage, relay, opts.remember ?? false);
+    this.refreshClaude();
+  }
+
+  /** Switch between a direct key and a relay, keeping both settings. */
+  setClaudeMode(mode: ChatMode): void {
+    this.chatLayer.configure({ mode });
+    if (this.opts.storage) saveSettings(this.opts.storage, { mode });
     this.refreshClaude();
   }
 
@@ -356,17 +384,11 @@ export class AppController {
     this.chatLayer.configure(patch);
     if (this.opts.storage) {
       const s = this.chatLayer.settings;
-      const remembered = this.opts.storage.getItem(STORAGE_KEYS.apiKey) !== null;
-      saveSettings(
-        this.opts.storage,
-        {
-          model: s.model,
-          workspaceId: s.workspaceId,
-          enabled: s.enabled,
-          apiKey: remembered ? this.opts.storage.getItem(STORAGE_KEYS.apiKey) : null,
-        },
-        remembered,
-      );
+      saveSettings(this.opts.storage, {
+        model: s.model,
+        workspaceId: s.workspaceId,
+        enabled: s.enabled,
+      });
     }
     this.refreshClaude();
   }
@@ -378,9 +400,9 @@ export class AppController {
     return status;
   }
 
-  /** Remove the key from memory and from this browser. */
+  /** Remove the key and relay settings from memory and from this browser. */
   forgetClaude(): void {
-    this.chatLayer.configure({ apiKey: null });
+    this.chatLayer.configure({ apiKey: null, relayUrl: null, relayPassphrase: null });
     if (this.opts.storage) clearSettings(this.opts.storage);
     this.refreshClaude();
   }
@@ -393,10 +415,15 @@ export class AppController {
   private claudeState(): ClaudeState {
     const s = this.chatLayer.settings;
     const m = this.chatLayer.metrics();
+    const secret = s.mode === 'relay' ? STORAGE_KEYS.relayPassphrase : STORAGE_KEYS.apiKey;
     return {
       status: this.chatLayer.status(),
+      mode: s.mode,
       hasKey: s.hasKey,
-      remembered: this.opts.storage?.getItem(STORAGE_KEYS.apiKey) != null,
+      hasRelay: s.hasRelay,
+      relayUrl: s.relayUrl,
+      ready: s.ready,
+      remembered: this.opts.storage?.getItem(secret) != null,
       enabled: s.enabled,
       model: s.model,
       workspaceId: s.workspaceId,

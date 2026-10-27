@@ -1,0 +1,159 @@
+name: Claude relay e2e
+
+# Manual only. Plays a game on the site with Claude bots called through the
+# Claude relay (relay/), and checks the relay's refusals.
+#
+# target:
+#   auto      the host's deployed relay if VESPER_RELAY_URL and
+#             VESPER_RELAY_PASSPHRASE are set, otherwise "local"
+#   local     runs relay/ in this job (wrangler dev, with the ANTHROPIC_API_KEY
+#             secret and a random passphrase) behind a temporary
+#             trycloudflare.com tunnel, so the live site can reach it
+#   deployed  the relay in VESPER_RELAY_URL / VESPER_RELAY_PASSPHRASE
+#
+# Secrets stay in step environments, traces are off, and results are checked
+# for the key and passphrase before upload.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which relay to test
+        type: choice
+        options: [auto, local, deployed]
+        default: auto
+      base_url:
+        description: Site to test, or "local" to build and serve this commit
+        default: https://theoi.github.io/vesper/
+      max_calls:
+        description: Per-game cap on Claude calls (10-200)
+        default: '60'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-relay-e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            relay/package-lock.json
+      # Install before any secret is in an environment, so no install script can read one.
+      - run: npm ci
+      - run: npm ci
+        working-directory: relay
+      - run: npx playwright install --with-deps chromium
+        timeout-minutes: 6
+
+      - name: Pick the relay
+        id: pick
+        env:
+          TARGET: ${{ inputs.target }}
+          DEPLOYED_URL: ${{ secrets.VESPER_RELAY_URL }}
+        run: |
+          if [ "$TARGET" = deployed ] || { [ "$TARGET" = auto ] && [ -n "$DEPLOYED_URL" ]; }; then
+            echo "target=deployed" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=local" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Use the deployed relay
+        if: steps.pick.outputs.target == 'deployed'
+        env:
+          URL: ${{ secrets.VESPER_RELAY_URL }}
+          PASS: ${{ secrets.VESPER_RELAY_PASSPHRASE }}
+        run: |
+          set +x
+          if [ -z "$URL" ] || [ -z "$PASS" ]; then
+            echo "Set the VESPER_RELAY_URL and VESPER_RELAY_PASSPHRASE secrets first."
+            exit 1
+          fi
+          echo "RELAY_URL=$URL" >> "$GITHUB_ENV"
+          echo "RELAY_PASSPHRASE=$PASS" >> "$GITHUB_ENV"
+
+      - name: Start the relay in this job behind a temporary tunnel
+        if: steps.pick.outputs.target == 'local'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BASE: ${{ inputs.base_url }}
+        run: |
+          set +x
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "The ANTHROPIC_API_KEY secret is not set."; exit 1; fi
+          if [ "$BASE" = local ]; then ORIGIN=http://localhost:4173; else ORIGIN=$(node -p "new URL(process.argv[1]).origin" "$BASE"); fi
+          PASS=$(openssl rand -hex 24)
+          echo "::add-mask::$PASS"
+          umask 077
+          printf 'ANTHROPIC_API_KEY=%s\nRELAY_PASSPHRASE=%s\n' "$ANTHROPIC_API_KEY" "$PASS" > relay/.dev.vars
+          (cd relay && nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --var "ALLOWED_ORIGINS:$ORIGIN" > ../wrangler.log 2>&1 &)
+          curl -fsSL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          nohup ./cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8787 > tunnel.log 2>&1 &
+          URL=
+          for i in $(seq 1 60); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' tunnel.log | head -1)
+            if [ -n "$URL" ] && curl -fs "$URL/" > /dev/null; then break; fi
+            URL=
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            echo "The tunnel did not come up."; tail -20 tunnel.log; tail -20 wrangler.log; exit 1
+          fi
+          echo "Relay at $URL, allowing $ORIGIN: $(curl -fs "$URL/")"
+          echo "RELAY_URL=$URL" >> "$GITHUB_ENV"
+          echo "RELAY_PASSPHRASE=$PASS" >> "$GITHUB_ENV"
+
+      - name: Play through the relay
+        env:
+          BASE: ${{ inputs.base_url }}
+          CLAUDE_E2E_CALLS: ${{ inputs.max_calls }}
+          # Only used to check that the key never reaches a browser.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +x
+          if [ "$BASE" != local ]; then export E2E_BASE_URL="$BASE"; fi
+          npx playwright test --grep @relay --trace off --reporter=list
+
+      - name: Check results for secrets
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +x
+          rm -f relay/.dev.vars
+          for s in "$ANTHROPIC_API_KEY" "$RELAY_PASSPHRASE"; do
+            if [ -n "$s" ] && grep -rqF -- "$s" test-results 2>/dev/null; then
+              echo "A secret appeared in test results; deleting them instead of uploading."
+              rm -rf test-results
+              exit 1
+            fi
+          done
+          if [ -f test-results/relay/summary.json ]; then
+            {
+              echo '### Relay e2e'
+              echo '```json'
+              node -e 'const s=require("./test-results/relay/summary.json"); const t=s.transcript||[]; console.log(JSON.stringify({...s, transcript: t.length+" lines"}, null, 2))'
+              for f in rejections statuses; do [ -f "test-results/relay/$f.json" ] && cat "test-results/relay/$f.json"; done
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: claude-relay-e2e-${{ github.run_id }}
+          path: test-results/relay
+          if-no-files-found: warn
+          retention-days: 30
