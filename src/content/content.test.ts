@@ -35,6 +35,13 @@ describe('help content', () => {
     for (const g of GLOSSARY) expect(g.definition.length, g.definition).toBeLessThanOrEqual(130);
   });
 
+  it('shows each role card with the engine flavor line, short enough for one intertitle', () => {
+    for (const id of ROLE_IDS) {
+      expect(ROLE_CARDS[id].flavor).toBe(ROLES[id].flavor);
+      expect(ROLES[id].flavor.length, ROLES[id].flavor).toBeLessThanOrEqual(90);
+    }
+  });
+
   it('says how each role reads to the Augur only where the engine agrees', () => {
     for (const id of ROLE_IDS) {
       const card = ROLE_CARDS[id];
