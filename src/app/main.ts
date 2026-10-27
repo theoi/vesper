@@ -84,21 +84,16 @@ addEventListener('pageshow', (e) => {
 
 type MountUi = (root: HTMLElement, controller: AppController) => () => void;
 
-// `?ui=v2` mounts the new UI from src/ui (its own lazy chunk); `?ui=shell` or
-// no parameter mounts the placeholder shell. The glob finds src/ui/index.ts
-// only once it exists, so this builds either way.
-const uiModules = import.meta.glob<{ mountUi: MountUi }>('../ui/index.ts');
-
+// The game UI from src/ui (its own lazy chunk) is the default. `?ui=shell`
+// mounts the plain shell instead, a fallback for browsers where the stage
+// doesn't work; the shell also shows if the game UI fails to load.
 async function chooseUi(): Promise<{ name: 'v2' | 'shell'; mount: MountUi }> {
-  const load = params.get('ui') === 'v2' ? uiModules['../ui/index.ts'] : undefined;
-  if (load) {
+  if (params.get('ui') !== 'shell') {
     try {
-      return { name: 'v2', mount: (await load()).mountUi };
+      return { name: 'v2', mount: (await import('../ui/index.ts')).mountUi };
     } catch (e) {
-      console.error('Could not load the new UI; showing the shell instead.', e);
+      console.error('Could not load the game UI; showing the shell instead.', e);
     }
-  } else if (params.get('ui') === 'v2') {
-    console.warn('This build has no new UI yet; showing the shell.');
   }
   return { name: 'shell', mount: mountShell };
 }
