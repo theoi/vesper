@@ -26,6 +26,8 @@ test('a service worker caches hashed files and serves them on reload @smoke', as
     await expect
       .poll(async () => (await cachedPaths(me.page)).join('\n'))
       .toMatch(/\/vesper\/assets\/main-[\w-]+\.js/);
+    const someAsset = (await cachedPaths(me.page)).find((p) => /\/main-[\w-]+\.js$/.test(p));
+    expect(someAsset).toBeTruthy();
 
     const served: { path: string; fromWorker: boolean }[] = [];
     me.page.on('response', (r) => {
@@ -40,16 +42,25 @@ test('a service worker caches hashed files and serves them on reload @smoke', as
     // Pages themselves always come from the network.
     expect(served.find((s) => s.path === '/vesper/')?.fromWorker).toBe(false);
 
-    // ?sw=0 removes the worker and its cache.
+    // ?sw=0 removes the worker and its cache. The page reloads itself once to
+    // drop the worker, so a read can land mid-navigation.
     await me.page.goto(appUrl({ sw: '0' }));
-    await expect
-      .poll(() =>
-        me.page.evaluate(async () => ({
+    const workerState = () =>
+      me.page
+        .evaluate(async () => ({
+          controlled: !!navigator.serviceWorker.controller,
           workers: (await navigator.serviceWorker.getRegistrations()).length,
           caches: (await caches.keys()).length,
-        })),
-      )
-      .toEqual({ workers: 0, caches: 0 });
+        }))
+        .catch(() => null);
+    const gone = { controlled: false, workers: 0, caches: 0 };
+    await expect.poll(workerState).toEqual(gone);
+    // Files loaded later (lazy chunks, fonts, art) must not bring the cache back.
+    await me.page.evaluate(async (path) => {
+      await (await fetch(path!)).arrayBuffer();
+    }, someAsset);
+    await me.page.waitForTimeout(500);
+    expect(await workerState()).toEqual(gone);
     expect(me.errors).toEqual([]);
   } finally {
     await closeAll([me]);

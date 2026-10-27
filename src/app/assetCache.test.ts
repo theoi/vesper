@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHashedAsset, prune, respond, type AssetCache } from './assetCache.ts';
+import { deleteCaches, isHashedAsset, prune, respond, type AssetCache } from './assetCache.ts';
 
 const SCOPE = 'https://theoi.github.io/vesper/';
 const ASSET = `${SCOPE}assets/face-anton-afraid-3fA9c2.webp`;
@@ -63,6 +63,20 @@ describe('respond', () => {
     expect(res.status).toBe(404);
     await Promise.all(pending);
     expect(cache.map.size).toBe(0);
+  });
+});
+
+describe('deleteCaches', () => {
+  it("deletes only this app's caches, except the one to keep", async () => {
+    const names = new Set(['vesper-assets-v0', 'vesper-assets-v1', 'other-app']);
+    const storage = {
+      keys: async () => [...names],
+      delete: async (name: string) => names.delete(name),
+    };
+    await deleteCaches(storage, 'vesper-assets-v1');
+    expect([...names]).toEqual(['vesper-assets-v1', 'other-app']);
+    await deleteCaches(storage);
+    expect([...names]).toEqual(['other-app']);
   });
 });
 

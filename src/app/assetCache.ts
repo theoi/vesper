@@ -61,6 +61,16 @@ async function store(url: string, response: Response, cache: AssetCache): Promis
   }
 }
 
+/** Delete this app's caches (`vesper-*`), except `keep`. */
+export async function deleteCaches(
+  storage: Pick<CacheStorage, 'keys' | 'delete'>,
+  keep?: string,
+): Promise<void> {
+  for (const name of await storage.keys()) {
+    if (name.startsWith('vesper-') && name !== keep) await storage.delete(name);
+  }
+}
+
 /** Delete the oldest entries beyond `max`. Cache keys come back in insertion order. */
 export async function prune(cache: AssetCache, max: number): Promise<number> {
   const keys = await cache.keys();

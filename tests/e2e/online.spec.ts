@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { HostMessage } from '../../src/net/index.ts';
 import { auditClientMessages } from '../support/leak-audit.ts';
 import {
   appUrl,
@@ -88,6 +89,12 @@ test.describe('online play @online', () => {
     await expect(host.page.getByTestId('back-to-lobby')).toBeVisible();
 
     // Hidden-information audit over every message each friend's browser received.
+    // Read the friends first: bots may still chat after the game ends, and the
+    // host's log must cover everything the friends hold.
+    const inbox = new Map<Player, HostMessage[]>([
+      [ari, await received(ari)],
+      [bo, [...boLogBefore, ...(await received(bo))]],
+    ]);
     const secrets = await hostSecrets(host);
     expect(secrets.log.length).toBeGreaterThan(0);
     const summary: Record<string, unknown> = {
@@ -95,11 +102,7 @@ test.describe('online play @online', () => {
       hostEvents: secrets.log.length,
       result: secrets.log.find((e) => e.type === 'gameOver'),
     };
-    for (const [p, before] of [
-      [ari, []],
-      [bo, boLogBefore],
-    ] as const) {
-      const messages = [...before, ...(await received(p))];
+    for (const [p, messages] of inbox) {
       expect(messages.length).toBeGreaterThan(10);
       const problems = auditClientMessages({
         playerId: await you(p),
