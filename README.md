@@ -25,7 +25,7 @@ Your browser runs the game, so keep the tab open until it ends. If you reload, t
 
 ## How a game goes
 
-- **Day:** talk it over, then vote to put someone on trial. Day 1 is for talking; voting starts on Day 2.
+- **Day:** talk it over, then vote to put someone on trial. Day 1 is for talking; voting starts on Day 2. A trial can't open in the first seconds of voting, so everyone gets a chance to vote; the vote meter counts down until it can.
 - **Trial:** the accused gets a short defense, then everyone else votes **Guilty**, **Innocent**, or **Abstain**. More guilty than innocent, and the accused is executed.
 - **Night:** roles with abilities use them in secret, and the Syndicate chooses someone to kill.
 - **Dawn:** everyone sees who died, what role they had, and the will they left.
