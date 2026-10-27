@@ -255,8 +255,9 @@ export class ClientSession implements GameSession {
         return;
       } catch (e) {
         // A missing room may be the host's page reloading: it reopens the same
-        // code, so keep trying until the window closes.
-        roomGone = toNetError(e).code === 'roomNotFound';
+        // code, so keep trying until the window closes. Once the room has been
+        // missing, a later network error doesn't change what happened.
+        if (toNetError(e).code === 'roomNotFound') roomGone = true;
       }
       await sleep(delay);
       delay = Math.min(delay * 2, 4000);
