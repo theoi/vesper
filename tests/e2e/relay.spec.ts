@@ -231,9 +231,10 @@ test.describe('Claude relay @relay', () => {
       for (const l of transcript) {
         if (l.source === 'scripted') reasons[l.reason ?? '?'] = (reasons[l.reason ?? '?'] ?? 0) + 1;
       }
+      // The friend first: the host's log must cover everything the friend holds.
+      const messages = await received(friend);
       const secrets = await hostSecrets(host);
       const gameOver = secrets.log.find((e) => e.type === 'gameOver');
-      const messages = await received(friend);
       const friendChat = new Set(
         messages.flatMap((m) =>
           m.t === 'view' ? m.view.events.filter((e) => e.type === 'chat').map((e) => e.text) : [],

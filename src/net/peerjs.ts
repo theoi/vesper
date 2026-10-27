@@ -169,9 +169,16 @@ class PeerJsClient implements ClientTransport {
       });
       peer.on('open', () => {
         if (timer) clearTimeout(timer);
-        timer = setTimeout(() => fail(new NetError('connectFailed')), ICE_TIMEOUT_MS);
         const conn = peer.connect(ID_PREFIX + this.code, { reliable: true });
         this.conn = conn;
+        // The server reports a missing room within a second (peer-unavailable).
+        // If that never comes and no host answered either, "found the host but
+        // could not connect" would be wrong.
+        const connFailed = () =>
+          fail(
+            new NetError(conn.peerConnection?.remoteDescription ? 'connectFailed' : 'roomNotFound'),
+          );
+        timer = setTimeout(connFailed, ICE_TIMEOUT_MS);
         conn.on('open', () => {
           if (timer) clearTimeout(timer);
           if (settled) return;
@@ -182,13 +189,13 @@ class PeerJsClient implements ClientTransport {
         });
         conn.on('data', (data) => this.onMessage?.(decode(data)));
         conn.on('close', () => {
-          if (!settled) return fail(new NetError('connectFailed'));
+          if (!settled) return connFailed();
           if (this.closed) return;
           this.closed = true;
           this.onClose?.();
         });
         conn.on('error', () => {
-          if (!settled) fail(new NetError('connectFailed'));
+          if (!settled) connFailed();
         });
       });
     }).catch((e: unknown) => {

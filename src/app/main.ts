@@ -108,18 +108,39 @@ async function chooseUi(): Promise<{ name: 'v2' | 'shell'; mount: MountUi }> {
 // `?sw=0` removes it and its cache, for debugging.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   if (params.get('sw') === '0') {
-    void navigator.serviceWorker
-      .getRegistrations()
-      .then((regs) => Promise.all(regs.map((r) => r.unregister())));
-    void caches
-      .keys()
-      .then((names) => names.filter((n) => n.startsWith('vesper-')).map((n) => caches.delete(n)));
+    removeAssetCache().catch((e: unknown) => console.warn('Could not remove the asset cache.', e));
   } else {
     addEventListener('load', () => {
       navigator.serviceWorker
         .register(`${import.meta.env.BASE_URL}sw.js`)
         .catch((e: unknown) => console.warn('The asset cache is unavailable.', e));
     });
+  }
+}
+
+/**
+ * A page the worker controls keeps fetching through it until the page goes
+ * away, even after `unregister()`. So: tell the worker to stop caching,
+ * unregister it, and reload once so this page runs without it, then delete
+ * the cache.
+ */
+async function removeAssetCache(): Promise<void> {
+  const worker = navigator.serviceWorker.controller;
+  worker?.postMessage('off');
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((r) => r.unregister()));
+  const tab = tabStorage();
+  const reloaded = 'vesper.swOffReload';
+  if (worker && tab && !tab.getItem(reloaded)) {
+    tab.setItem(reloaded, '1');
+    location.reload();
+    return;
+  }
+  tab?.removeItem(reloaded);
+  // Not assetCache.ts's deleteCaches: sharing that module with sw.ts would
+  // split it into a chunk, and the classic service worker can't import one.
+  for (const name of await caches.keys()) {
+    if (name.startsWith('vesper-')) await caches.delete(name);
   }
 }
 

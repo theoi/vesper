@@ -35,7 +35,7 @@ E2E tests drive the UI through these. Keep them when restyling (or update `tests
 - `window.__vesper`: the `AppController`. With `localStorage['vesper.netlog'] = '1'`, `window.__vesper.netLog` records every message received from the host.
 - `?net=peerjs` or `?net=trystero-nostr` forces one transport (default: PeerJS with Trystero fallback).
 - `?claudeCalls=N` lowers the per-game Claude call budget (cost control for tests).
-- `?sw=0` unregisters the service worker and deletes its cache (debugging).
+- `?sw=0` unregisters the service worker and deletes its cache (debugging). A page the worker controls keeps using it until the page goes away, so the page first tells the worker to stop caching (`'off'`), unregisters it, reloads once to drop it, then deletes the cache.
 - `?ui=v2` mounts the new UI: `src/ui/index.ts` must export `mountUi(root, controller)` returning a dispose function, the same shape as `mountShell`. It loads as its own chunk; if it is missing or fails to load, the page logs it and shows the shell. `?ui=shell` or no parameter mounts the placeholder shell. `<html data-ui>` says which UI is mounted (`v2` or `shell`).
 
 `data-testid` hooks:
