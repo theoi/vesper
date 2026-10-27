@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
 // Directions whose preview pages are merged. Each must start, play every scene, and make sound.
-const SLUGS = ['masque', 'agitprop', 'deadair'];
+// Round two leads the index; round one stays live as an archive.
+const SLUGS = ['supper', 'masque', 'agitprop', 'deadair'];
 
 interface PreviewApi {
   scenes: { id: string }[];
@@ -22,9 +23,10 @@ const api = <T>(page: Page, fn: (p: PreviewApi, arg: string) => T | Promise<T>, 
     [fn.toString(), arg] as const,
   );
 
-test('previews index lists the three directions @smoke', async ({ page }) => {
+test('previews index leads with round two and keeps round one @smoke', async ({ page }) => {
   await page.goto('./previews/');
   await expect(page.locator('.panel')).toHaveCount(3);
+  await expect(page.locator('.archive a')).toHaveCount(3);
 });
 
 for (const slug of SLUGS) {
@@ -36,7 +38,8 @@ for (const slug of SLUGS) {
     });
     await page.goto(`./previews/${slug}/?auto=0`);
     await page.locator('.pv-gate').click();
-    await expect.poll(() => api(page, (p) => p.current())).toBe('title');
+    // Round-two pages load their portraits and recordings after the click.
+    await expect.poll(() => api(page, (p) => p.current()), { timeout: 30_000 }).toBe('title');
 
     const ids = await api(page, (p) => p.scenes.map((s) => s.id));
     expect(ids).toEqual(['title', 'role', 'nightfall', 'dawn', 'day', 'trial', 'execution']);
