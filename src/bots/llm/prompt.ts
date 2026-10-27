@@ -331,7 +331,8 @@ function channelLabel(view: PlayerView, speech: BotSpeech): string {
 }
 
 function personaLines(p: Personality, view: PlayerView, draft: string): string[] {
-  const out = [`You are ${view.you.name}. Voice: ${p.label}. ${p.voice}`];
+  // The persona label is for the host's screen; shown to the model, it became a self-name.
+  const out = [`You are ${view.you.name}. Your voice: ${p.voice}`];
   const notes = p.quirks.map((q) => QUIRK_NOTES[q]).filter((x): x is string => !!x);
   // Shown only when the script used it, so the model doesn't repeat it every line.
   if (p.catchphrase && draft.toLowerCase().includes(p.catchphrase.toLowerCase()))

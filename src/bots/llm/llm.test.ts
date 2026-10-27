@@ -300,6 +300,16 @@ describe('prompts use only the speaking bot’s own view', () => {
     );
   });
 
+  it('describes the voice without the persona label, which the model took as a name', () => {
+    const view = viewFor(day2().state, 'p0');
+    const gremlin = line('accuse', 'gus is hiding something.', accuseGus.act, {
+      personality: 'gremlin',
+    });
+    const user = buildPrompt(view, gremlin, 160).user;
+    expect(user).toContain('Your voice: Chaotic and mischievous');
+    expect(user).not.toMatch(/gremlin/i);
+  });
+
   it('points out lines said to the bot since it last spoke', () => {
     const user = buildPrompt(viewFor(day2().state, 'p0'), accuseGus, 160).user;
     expect(user).toContain("Said to you since your last message: Bea: Ada, what's your role?");
