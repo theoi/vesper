@@ -622,6 +622,11 @@
   transform: rotate(-3deg);
 }
 
+.vs-letter.linger {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .vs-letter.note {
   right: auto;
   left: 6%;

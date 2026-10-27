@@ -102,6 +102,10 @@ export class Film {
     return closes;
   }
 
+  clearGrain(): void {
+    this.grain.clear();
+  }
+
   /** Fade the film out (0 = at once). */
   clear(ms = 260): void {
     if (!this.live) return;
@@ -118,8 +122,11 @@ export class Film {
     }, ms);
   }
 
+  /** Reduced motion: no grain, dust, scratches or exposure flicker. */
+  calm = false;
+
   draw(): void {
-    if (this.live) this.grain.draw(1);
+    if (this.live && !this.calm) this.grain.draw(1);
   }
 
   dispose(): void {

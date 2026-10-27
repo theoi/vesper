@@ -60,8 +60,8 @@ export interface Stage extends StageApi {
   spirit(text: string, tone: Tone, sub?: string): HTMLElement;
   /** A small ink plate at the top of the cloth (a claim, a notice). Removes itself after `ms`. */
   plate(text: string, kicker?: string, ms?: number): HTMLElement;
-  /** A handwritten letter (a will, a death note). */
-  letter(title: string, body: string, kind?: 'will' | 'note'): HTMLElement;
+  /** A handwritten letter (a will, a death note). With `ms`, it outlives the sequence. */
+  letter(title: string, body: string, kind?: 'will' | 'note', ms?: number): HTMLElement;
   /** A thread of light between two shades (a whisper). */
   thread(a: PlayerId, b: PlayerId): void;
   /** Transient candle effects. */
@@ -371,6 +371,9 @@ class ScrimStage implements Stage {
 
   setReducedMotion(on: boolean): void {
     this.reduced = on;
+    this.cloth.calm = on;
+    this.film.calm = on;
+    if (on) this.film.clearGrain();
     this.el.classList.toggle('rm', on);
   }
 
@@ -646,11 +649,27 @@ class ScrimStage implements Stage {
     return el;
   }
 
-  letter(title: string, body: string, kind: 'will' | 'note' = 'will'): HTMLElement {
+  letter(title: string, body: string, kind: 'will' | 'note' = 'will', ms = 0): HTMLElement {
+    for (const old of this.over.querySelectorAll(`.vs-letter.${kind}`)) old.remove();
     const el = div(`vs-letter ${kind}`);
     el.append(div('vs-letter-title', title), div('vs-letter-body', body));
     this.over.append(el);
     requestAnimationFrame(() => el.classList.add('on'));
+    if (ms > 0) {
+      // A lingering letter stays readable after its sequence ends; a click puts it away.
+      el.classList.add('linger');
+      el.title = 'Put the letter away';
+      const close = () => {
+        el.classList.remove('on');
+        window.setTimeout(() => el.remove(), 700);
+      };
+      const timer = window.setTimeout(close, ms);
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.clearTimeout(timer);
+        close();
+      });
+    }
     return el;
   }
 
@@ -684,7 +703,7 @@ class ScrimStage implements Stage {
   }
 
   clearOver(): void {
-    this.over.replaceChildren();
+    for (const el of [...this.over.children]) if (!el.classList.contains('linger')) el.remove();
     for (const li of this.candles.children) li.classList.remove('dimmed');
   }
 

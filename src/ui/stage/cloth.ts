@@ -57,10 +57,10 @@ void main() {
   float light = uLamp * fl * (0.09 + 0.52 * wide + 0.85 * hot);
 
   vec3 base = mix(vec3(0.86, 0.58, 0.3), vec3(0.25, 0.37, 0.58), uCold);
-  base = mix(base, vec3(0.8, 0.76, 0.7), uDawn);
+  base = mix(base, vec3(0.62, 0.5, 0.5), uDawn);
   base = mix(base, vec3(0.78, 0.27, 0.08), uEmber);
   vec3 core = mix(vec3(1.0, 0.9, 0.66), vec3(0.72, 0.84, 1.0), uCold);
-  core = mix(core, vec3(1.0, 0.97, 0.92), uDawn);
+  core = mix(core, vec3(0.96, 0.82, 0.74), uDawn);
   core = mix(core, vec3(1.0, 0.72, 0.4), uEmber);
 
   vec3 col = base * light + core * hot * hot * uLamp * fl * 0.5;
@@ -238,11 +238,11 @@ export const LOOKS = {
     fog: 0.2,
   },
   dawn: {
-    lamp: 0.86,
+    lamp: 0.66,
     hx: 0.5,
-    hy: 0.7,
-    hr: 0.7,
-    cold: 0.12,
+    hy: 0.74,
+    hr: 0.5,
+    cold: 0.18,
     dawn: 1,
     ember: 0,
     flicker: 0.1,
@@ -250,10 +250,10 @@ export const LOOKS = {
     fog: 0.1,
   },
   town: {
-    lamp: 1.12,
+    lamp: 0.9,
     hx: 0.5,
     hy: 0.72,
-    hr: 0.8,
+    hr: 0.62,
     cold: 0,
     dawn: 1,
     ember: 0,
@@ -324,6 +324,8 @@ export class Cloth {
     flash: 0,
   };
   private tweens = new Map<LightKey, Tween>();
+  /** Reduced motion: the lamp holds steady and flashes are softened. */
+  calm = false;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -436,11 +438,11 @@ export class Cloth {
     gl.uniform1f(this.uni('uCold'), v.cold);
     gl.uniform1f(this.uni('uDawn'), v.dawn);
     gl.uniform1f(this.uni('uEmber'), v.ember);
-    gl.uniform1f(this.uni('uFlicker'), v.flicker);
+    gl.uniform1f(this.uni('uFlicker'), this.calm ? 0 : v.flicker);
     gl.uniform3f(this.uni('uGlow'), v.gx, v.gy, v.gz);
     gl.uniform1f(this.uni('uFloor'), this.floor);
     gl.uniform1f(this.uni('uFog'), v.fog);
-    gl.uniform1f(this.uni('uFlash'), v.flash);
+    gl.uniform1f(this.uni('uFlash'), this.calm ? v.flash * 0.25 : v.flash);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

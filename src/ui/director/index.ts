@@ -274,6 +274,8 @@ class Director implements DirectorApi {
   dispose(): void {
     this.disposed = true;
     this.take?.skip();
+    this.audio.setTension(0);
+    this.audio.setScene('silence');
     window.clearTimeout(this.ambient);
     for (const t of this.speakTimers.values()) window.clearTimeout(t);
   }

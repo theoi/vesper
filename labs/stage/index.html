@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vesper stage lab</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #050403;
+        color: #e8dcc4;
+        font:
+          14px/1.4 ui-monospace,
+          monospace;
+      }
+      body {
+        display: grid;
+        grid-template-columns: 1fr 300px;
+      }
+      #stage {
+        position: relative;
+        min-height: 0;
+      }
+      aside {
+        overflow: auto;
+        padding: 0.8rem 1rem;
+        border-left: 1px solid #2b241b;
+      }
+      h2 {
+        margin: 1rem 0 0.3rem;
+        font-size: 13px;
+        color: #c9a45c;
+      }
+      button {
+        font: inherit;
+        background: #241e17;
+        color: inherit;
+        border: 1px solid #4a3d2c;
+        padding: 0.2rem 0.5rem;
+        margin: 0 0.25rem 0.3rem 0;
+        cursor: pointer;
+      }
+      #now {
+        min-height: 1.4em;
+        color: #f0b45a;
+      }
+      body.clip {
+        grid-template-columns: 1fr;
+      }
+      body.clip aside {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <aside>
+      <p>Each button plays one staged sequence on a real stage over a real game view.</p>
+      <p id="now"></p>
+      <div id="controls"></div>
+    </aside>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

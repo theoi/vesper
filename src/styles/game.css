@@ -717,7 +717,8 @@
       #2a0808 100%
     ),
     rgba(6, 4, 3, 0.62);
-  animation: vx-fade 0.8s ease 3.2s both;
+  /* The playbill waits for the finale on the stage (about 5 s) to play out. */
+  animation: vx-fade 0.8s ease 5.2s both;
 }
 
 .vx .vx-curtain.is-collapsed {

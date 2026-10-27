@@ -43,7 +43,12 @@ export function createTopBar(ctx: UiContext, opts: { openLetters(): void }): Top
     class: 'vx-claude-line',
     hidden: true,
   });
-  const letters = h('button', { type: 'button', class: 'vx-tool', text: 'Will' });
+  const letters = h('button', {
+    type: 'button',
+    class: 'vx-tool',
+    text: 'Will',
+    'data-testid': 'will-open',
+  });
   const help = h('button', { type: 'button', class: 'vx-tool', text: 'Help' });
   const settings = h('button', { type: 'button', class: 'vx-tool', text: 'Settings' });
   const leave = ticket('Leave', { 'data-testid': 'leave', class: 'tk-tiny' }, 'ghost');

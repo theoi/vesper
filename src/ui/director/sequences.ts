@@ -119,13 +119,13 @@ async function deal({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'deal' }>): Prom
     });
   });
   a.cue(cue);
-  await t.wait(500);
+  await t.wait(400);
   const sub =
     q.tone === 'mafia' && q.teammates.length
       ? `With ${q.teammates.map((id) => s.nameOf(id)).join(', ')}`
       : role.flavor;
   s.spirit(q.changed ? `Now: ${role.name}` : role.name, q.tone, sub);
-  await t.wait(2900);
+  await t.wait(2500);
   s.film.card({
     kicker: q.changed ? 'Your part has changed' : 'You are',
     role: `the ${role.name}`,
@@ -133,7 +133,7 @@ async function deal({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'deal' }>): Prom
     tone: q.tone,
   });
   a.cue('cut');
-  await t.wait(2200);
+  await t.wait(2000);
 }
 
 // --- day ----------------------------------------------------------------------------------
@@ -399,13 +399,18 @@ async function stageDeath({ t, s, a }: Ctx, d: DeathInfo, short: boolean): Promi
 }
 
 /** Close-up with closed eyes, the name and role, then the will as a letter. */
-async function revealDeath({ t, s, a }: Ctx, d: DeathInfo, short: boolean): Promise<void> {
+async function revealDeath(
+  { t, s, a }: Ctx,
+  d: DeathInfo,
+  short: boolean,
+  close = !short,
+): Promise<void> {
   const who = s.nameOf(d.player);
   const face = s.faceOf(d.player);
-  if (face && !short) {
+  if (face && close) {
     s.film.close(face, { x: 'closed', z: 1.8, blink: false }, who);
     a.cue('cut');
-    await t.wait(1400);
+    await t.wait(1100);
   }
   a.cue('reveal');
   s.film.card(
@@ -423,15 +428,23 @@ async function revealDeath({ t, s, a }: Ctx, d: DeathInfo, short: boolean): Prom
           tone: toneOf(d.role),
         },
   );
-  await t.wait(short ? 1500 : 1900);
+  await t.wait(short ? 1300 : 1700);
   s.film.clear();
-  if (d.will?.trim()) {
-    s.letter(`The last will of ${who}`, d.will.trim());
+  // Letters linger over the cloth after the sequence ends, so reading never holds up play.
+  const will = d.will?.trim();
+  if (will) {
+    s.letter(`The last will of ${who}`, will, 'will', readingMs(will));
     a.cue('will');
   }
-  if (d.notes.some((n) => n.trim()))
-    s.letter('Left on the body', d.notes.filter((n) => n.trim()).join('\n'), 'note');
-  if (d.will?.trim() || d.notes.length) await t.wait(short ? 2200 : 3000);
+  const note = d.notes
+    .map((n) => n.trim())
+    .filter(Boolean)
+    .join('\n');
+  if (note) s.letter('Left on the body', note, 'note', readingMs(note));
+}
+
+function readingMs(text: string): number {
+  return Math.min(12000, 4500 + text.length * 40);
 }
 
 async function execution(c: Ctx, q: Extract<SeqSpec, { id: 'execution' }>): Promise<void> {
@@ -444,33 +457,34 @@ async function execution(c: Ctx, q: Extract<SeqSpec, { id: 'execution' }>): Prom
     if (face) {
       s.film.close(face, { x: 'afraid', z: 2.3, ax: 0.6 });
       a.cue('cut');
-      await t.wait(1100);
+      await t.wait(900);
       s.film.clear(0);
     }
-    s.cloth.to({ lamp: 1.3, hr: 0.18, hx: 0.5, ember: 0.15 }, 1800);
+    s.cloth.to({ lamp: 1.3, hr: 0.18, hx: 0.5, ember: 0.15 }, 1500);
     if (sh) {
       sh.go({ x: 50, z: 0, dim: 1 }, 0);
       sh.act('idle', 0);
-      sh.go({ z: 0.95, dim: 0 }, 2200, 'cubic-bezier(.5,0,.8,.6)');
+      sh.go({ z: 0.95, dim: 0 }, 1800, 'cubic-bezier(.5,0,.8,.6)');
     }
     a.cue('deathExecuted');
-    await t.wait(1900);
+    await t.wait(1600);
     s.cloth.flash(0.45, 700);
     s.candle(id, 'out');
-    await t.wait(700);
-  } else {
-    s.cloth.to({ lamp: 0.07, ember: 0.55, hr: 0.25 }, 2600);
-    if (sh) {
-      sh.go({ x: 50, z: 0.1, dim: 1 }, 400);
-      sh.act('kneel', 300);
-      sh.go({ dim: 0 }, 2600);
-    }
-    a.cue('deathExecuted');
-    await t.wait(2400);
-    s.candle(id, 'out');
-    a.cue('candleOut', { pan: s.pan(id) });
-    await t.wait(600);
+    await t.wait(500);
+    if (q.death) await revealDeath(c, q.death, false, false);
+    return;
   }
+  s.cloth.to({ lamp: 0.07, ember: 0.55, hr: 0.25 }, 2200);
+  if (sh) {
+    sh.go({ x: 50, z: 0.1, dim: 1 }, 400);
+    sh.act('kneel', 300);
+    sh.go({ dim: 0 }, 2200);
+  }
+  a.cue('deathExecuted');
+  await t.wait(2000);
+  s.candle(id, 'out');
+  a.cue('candleOut', { pan: s.pan(id) });
+  await t.wait(500);
   if (q.death) await revealDeath(c, q.death, false);
 }
 
@@ -491,8 +505,8 @@ async function dawn(c: Ctx, q: Extract<SeqSpec, { id: 'dawn' }>): Promise<void> 
     a.cue('dawnDeath');
     const short = q.deaths.length > 1;
     if (short) {
-      s.plate(`${q.deaths.length} candles went out in the night.`, `Day ${q.day}`, 2200);
-      await t.wait(1200);
+      s.plate(`${q.deaths.length} candles went out in the night.`, `Day ${q.day}`, 2000);
+      await t.wait(900);
     }
     for (const d of q.deaths) {
       await stageDeath(c, d, short);
@@ -513,7 +527,7 @@ async function spiritNotes({ t, s, a }: Ctx, notes: readonly Note[]): Promise<vo
     s.clearOver();
     s.spirit(n.text, n.tone);
     a.cue('whisper', { gain: 0.8 });
-    await t.wait(2600);
+    await t.wait(2300);
   }
 }
 
@@ -545,13 +559,14 @@ async function nightfall(
   a.cue('nightfall', { variant });
   if (q.variant === 'lamps') {
     s.cloth.look(look, 2800);
+    const step = Math.min(220, 2000 / Math.max(1, alive.length));
     alive.forEach((id, i) => {
-      t.later(220 * i, () => {
+      t.later(step * i, () => {
         s.candle(id, 'dim');
         s.shadeOf(id)?.go({ dim: 0 }, 500);
       });
     });
-    await t.wait(Math.max(2600, 220 * alive.length + 900));
+    await t.wait(Math.max(2600, step * alive.length + 900));
     return;
   }
   if (q.variant === 'fog') {

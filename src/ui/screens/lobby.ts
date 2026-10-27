@@ -19,6 +19,7 @@ export function lobbyFrame(ctx: UiContext): Frame {
   stage.setReducedMotion(ctx.prefs.reducedMotion);
   const unPrefs = ctx.prefs.subscribe((on) => stage.setReducedMotion(on));
   stage.onPick(() => {});
+  ctx.audio.setScene('lobby');
 
   const code = h('code', { 'data-testid': 'room-code', class: 'vx-room-code' });
   const link = h('input', {
