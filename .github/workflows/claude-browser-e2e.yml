@@ -15,6 +15,10 @@ on:
       max_calls:
         description: Per-game cap on Claude calls (10-200)
         default: '60'
+      relay:
+        description: Forward Anthropic calls through Node without Origin (for keys whose org blocks browser requests)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,10 +44,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Play with Claude bots on the live site
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # A key from an org without custom data retention, if provided, can call Anthropic from a browser.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_BROWSER_API_KEY || secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           E2E_BASE_URL: ${{ inputs.base_url }}
           CLAUDE_E2E_CALLS: ${{ inputs.max_calls }}
+          CLAUDE_E2E_RELAY: ${{ inputs.relay && '1' || '0' }}
         run: |
           set +x
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "The ANTHROPIC_API_KEY secret is not set."; exit 1; fi
@@ -51,7 +57,7 @@ jobs:
       - name: Check results for the key
         if: always()
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_BROWSER_API_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           set +x
           if [ -n "$ANTHROPIC_API_KEY" ] && grep -rqF -- "$ANTHROPIC_API_KEY" test-results 2>/dev/null; then
