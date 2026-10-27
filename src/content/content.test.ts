@@ -1,12 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { ROLES, ROLE_IDS } from '../engine/roles.ts';
-import { GLOSSARY, HOW_TO_PLAY, PHASE_HELP, ROLE_CARDS, fill } from './index.ts';
+import {
+  DEATH_CAUSE,
+  GLOSSARY,
+  HOW_TO_PLAY,
+  NIGHT_OUTCOME,
+  OUTCOME_HEADLINE,
+  PHASE_HELP,
+  RESULT_REASON,
+  ROLE_CARDS,
+  SAVED_BY,
+  deathPhrase,
+  fill,
+  resultLine,
+} from './index.ts';
+
+const labels = (): string[] => [
+  ...Object.values(DEATH_CAUSE),
+  ...Object.values(OUTCOME_HEADLINE),
+  ...Object.values(RESULT_REASON),
+  ...Object.values(SAVED_BY),
+  ...Object.values(NIGHT_OUTCOME),
+];
 
 const allText = (): string[] => [
   ...HOW_TO_PLAY.flatMap((s) => [s.title, ...s.body]),
   ...Object.values(PHASE_HELP).flatMap((p) => [p.title, p.short, p.detail]),
   ...Object.values(ROLE_CARDS).flatMap((c) => [c.ability, ...c.tips]),
   ...GLOSSARY.flatMap((g) => [g.term, g.definition]),
+  ...labels(),
 ];
 
 describe('help content', () => {
@@ -57,5 +79,34 @@ describe('help content', () => {
     const linked = GLOSSARY.filter((g) => g.role);
     expect(linked.length).toBeGreaterThan(0);
     for (const g of linked) expect(g.term).toBe(ROLE_CARDS[g.role as keyof typeof ROLE_CARDS].name);
+  });
+});
+
+describe('labels', () => {
+  it('never show an engine id where a display name belongs', () => {
+    for (const text of labels()) {
+      expect(text, text).not.toMatch(/\bmafia\b/i);
+      expect(text, text).not.toMatch(/\b[a-z]+[A-Z]\w*\b/);
+    }
+  });
+
+  it('join several causes of one death into one phrase', () => {
+    expect(deathPhrase(['mafia'])).toBe('was killed by the Syndicate');
+    expect(deathPhrase(['mafia', 'cutthroat'])).toBe(
+      'was killed by the Syndicate and stabbed by the Cutthroat',
+    );
+    expect(deathPhrase(['mafia', 'cutthroat', 'reckoner', 'mafia'])).toBe(
+      'was killed by the Syndicate, stabbed by the Cutthroat, and shot by a Reckoner',
+    );
+    expect(deathPhrase(['guarding', 'mafia'])).toBe(
+      'died guarding someone and was killed by the Syndicate',
+    );
+    expect(deathPhrase([])).toBe('died');
+  });
+
+  it('end the game with one sentence: who won and why', () => {
+    expect(resultLine({ outcome: 'cutthroat', reason: 'lastKillerStanding' })).toBe(
+      'The Cutthroat stands alone: one killer is left standing.',
+    );
   });
 });

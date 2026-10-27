@@ -407,7 +407,7 @@ function onDeath(m: Mind, e: Extract<GameEvent, { type: 'death' }>): void {
         later(m, `will:${e.player}`, {
           t: 'will',
           player: e.player,
-          summary: `${name} ${top.finding}`,
+          summary: willSummary(name, top.finding),
         });
       }
     }
@@ -486,5 +486,22 @@ function onResult(m: Mind, e: Extract<GameEvent, { type: 'nightResult' }>): void
       return;
     default:
       return;
+  }
+}
+
+/** A will's main finding as a clause: "Bea is suspicious", "they guarded Cal". */
+function willSummary(name: string, finding: ClaimedResult['finding']): string {
+  switch (finding) {
+    case 'suspicious':
+    case 'clear':
+      return `${name} is ${finding}`;
+    case 'visited':
+      return `${name} had visitors`;
+    case 'healed':
+      return `they healed ${name}`;
+    case 'guarded':
+      return `they guarded ${name}`;
+    case 'blocked':
+      return `they distracted ${name}`;
   }
 }

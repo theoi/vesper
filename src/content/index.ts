@@ -9,3 +9,12 @@ export {
   type PhaseHelp,
   type RoleCard,
 } from './help.ts';
+export {
+  DEATH_CAUSE,
+  NIGHT_OUTCOME,
+  OUTCOME_HEADLINE,
+  RESULT_REASON,
+  SAVED_BY,
+  deathPhrase,
+  resultLine,
+} from './labels.ts';

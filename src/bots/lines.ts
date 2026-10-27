@@ -126,10 +126,10 @@ export const LINES: Record<Category, string[]> = {
   ],
   willReact: [
     "{v}'s will says: {x}. Worth taking seriously.",
-    'Read the will. {v} wrote {x}.',
-    "So {v} left us {x}. Let's use it.",
+    'Read the will. {v} wrote: {x}.',
+    "So {v} left us a lead: {x}. Let's use it.",
     "{v}'s will points somewhere: {x}.",
-    'The dead do not lie. {v} wrote {x}.',
+    'The dead do not lie. {v} wrote: {x}.',
   ],
   execTown: [
     'We hanged a {r} yesterday. {v} was innocent.',
@@ -658,7 +658,7 @@ function applyQuirks(
   if (p.quirks.includes('questions') && rng.chance(0.2) && /\.$/.test(out)) {
     out = `${out} ${rng.pick(['Right?', 'No?', 'Agreed?', 'Thoughts?'])}`;
   }
-  if (p.quirks.includes('catchphrase') && p.catchphrase && rng.chance(0.15)) {
+  if (p.quirks.includes('catchphrase') && p.catchphrase && rng.chance(0.08)) {
     out = `${out} ${p.catchphrase}`;
   }
   if (p.quirks.includes('lowercase')) out = out.toLowerCase();
