@@ -285,6 +285,8 @@ export interface PlayerState {
   accuserTarget: PlayerId | null;
   /** Harlequin executed, or Accuser's target executed. */
   neutralWin: boolean;
+  /** Private night results so far, oldest first. */
+  nightResults: { night: number; result: NightResult }[];
 }
 
 export type Ballot = 'guilty' | 'innocent' | 'abstain';
