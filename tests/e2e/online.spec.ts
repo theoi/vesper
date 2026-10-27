@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { auditClientMessages } from '../support/leak-audit.ts';
 import {
+  appUrl,
   closeAll,
   hostRoom,
   hostSecrets,
@@ -165,7 +166,7 @@ test.describe('online play @online', () => {
 });
 
 async function joinRoomExpectingError(p: Player, code: string): Promise<void> {
-  await p.page.goto(`./?room=${code}`);
+  await p.page.goto(appUrl({ room: code }));
   await p.page.getByTestId('name-input').fill(p.name);
   await p.page.getByTestId('join').click();
 }
