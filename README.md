@@ -56,7 +56,7 @@ You can connect Claude in two ways. Both are in the lobby under **Claude bots**,
 
 The key stays in the host's browser and is sent only to Anthropic, never to other players. It is kept in memory, or in local storage if you tick **Remember on this device**.
 
-Some Anthropic organizations block requests made directly from a browser, for example organizations with zero or custom data retention. The status then says that the organization blocks browser requests. Use the relay instead.
+Some Anthropic organizations block requests made directly from a browser, for example organizations with zero or custom data retention. The status then says that the organization blocks browser requests and points you to **My relay**. Bots keep playing with their scripted lines; set up the relay below to use Claude with that key.
 
 ### With your own relay (your key never reaches a browser)
 
