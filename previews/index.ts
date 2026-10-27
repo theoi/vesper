@@ -1,20 +1,20 @@
-import '@fontsource-variable/archivo/wdth.css';
-import '@fontsource-variable/bodoni-moda/standard-italic.css';
-import '@fontsource-variable/cormorant-garamond/wght-italic.css';
-import '@fontsource-variable/big-shoulders-display';
-import '@fontsource-variable/unbounded';
-import '@fontsource/space-mono/400.css';
-import { maskSVG } from './masque/masks.ts';
+import '@fontsource/im-fell-english';
+import '@fontsource/im-fell-english/400-italic.css';
+import '@fontsource/im-fell-english-sc';
+import seance from './seance/img/mira-glanceL.webp?url';
+import supper from './supper/img/kestrel-glanceR.webp?url';
+import scrim from './scrim/img/anton-afraid.webp?url';
 import './index.css';
 
 // Directions that are merged and live; the others show as "in rehearsal".
-const LIVE = new Set(['masque', 'agitprop', 'deadair']);
-
-const mask = document.querySelector('.mq-mask');
-if (mask) mask.innerHTML = maskSVG({ variant: 0, eyesClosed: true });
+const LIVE = new Set(['supper']);
+const ART: Record<string, string> = { supper, seance, scrim };
 
 document.querySelectorAll<HTMLAnchorElement>('.panel').forEach((panel) => {
-  if (LIVE.has(panel.dataset.slug ?? '')) return;
+  const slug = panel.dataset.slug ?? '';
+  const art = panel.querySelector<HTMLElement>('.art');
+  if (art && ART[slug]) art.style.backgroundImage = `url("${ART[slug]}")`;
+  if (LIVE.has(slug)) return;
   panel.classList.add('soon');
   panel.removeAttribute('href');
   panel.setAttribute('aria-disabled', 'true');
