@@ -19,8 +19,12 @@ export const NOSTR_RELAYS = [
   'wss://cdn.satellite.earth',
   'wss://relay.nostr.net',
 ];
-/** Trystero can't tell "no such room" from "slow"; give up after this long. */
-const FIND_HOST_TIMEOUT_MS = 8000;
+/**
+ * Trystero can't tell "no such room" from "slow"; give up after this long. A player who left
+ * and rejoins from the same tab reuses Trystero's peer id, and the host's side keeps the old
+ * connection for about 10 s before the new one gets through, so this must outlast that.
+ */
+const FIND_HOST_TIMEOUT_MS = 14_000;
 
 type Wire = { k: 'host' } | { k: 'msg'; m: JsonValue };
 

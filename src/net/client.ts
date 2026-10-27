@@ -24,7 +24,7 @@ export interface ClientOptions {
 
 /**
  * Long enough for the default transport to try both halves: PeerJS can take
- * 12 s to give up on signaling (or 15 s on ICE), then Trystero waits 8 s for
+ * 12 s to give up on signaling (or 15 s on ICE), then Trystero waits 14 s for
  * the host. A shorter limit would cut off the Trystero fallback.
  */
 const CONNECT_TIMEOUT_MS = 35_000;
