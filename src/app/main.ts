@@ -82,8 +82,34 @@ addEventListener('pageshow', (e) => {
   if (e.persisted && suspended) location.reload();
 });
 
+type MountUi = (root: HTMLElement, controller: AppController) => () => void;
+
+// `?ui=v2` mounts the new UI from src/ui (its own lazy chunk); `?ui=shell` or
+// no parameter mounts the placeholder shell. The glob finds src/ui/index.ts
+// only once it exists, so this builds either way.
+const uiModules = import.meta.glob<{ mountUi: MountUi }>('../ui/index.ts');
+
+async function chooseUi(): Promise<{ name: 'v2' | 'shell'; mount: MountUi }> {
+  const load = params.get('ui') === 'v2' ? uiModules['../ui/index.ts'] : undefined;
+  if (load) {
+    try {
+      return { name: 'v2', mount: (await load()).mountUi };
+    } catch (e) {
+      console.error('Could not load the new UI; showing the shell instead.', e);
+    }
+  } else if (params.get('ui') === 'v2') {
+    console.warn('This build has no new UI yet; showing the shell.');
+  }
+  return { name: 'shell', mount: mountShell };
+}
+
 const app = document.querySelector<HTMLElement>('#app');
-if (app) mountShell(app, controller);
+if (app) {
+  void chooseUi().then(({ name, mount }) => {
+    document.documentElement.dataset.ui = name;
+    mount(app, controller);
+  });
+}
 
 // Opening a share link with a remembered name rejoins straight away.
 const linkCode = controller.getState().linkCode;
