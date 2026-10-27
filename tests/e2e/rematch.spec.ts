@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { auditClientMessages } from '../support/leak-audit.ts';
 import {
+  allGameSecrets,
   closeAll,
   hostRoom,
-  hostSecrets,
   joinRoom,
+  keepFinishedGames,
   logLines,
+  messagesByGame,
   openPlayer,
   received,
   snapshot,
@@ -47,8 +49,7 @@ test.describe('rematch @online', () => {
     const seatOf = new Map<Player, string>();
     for (const f of friends) seatOf.set(f, await you(f));
 
-    const games: { log: Awaited<ReturnType<typeof hostSecrets>>; split: Map<Player, number> }[] =
-      [];
+    await keepFinishedGames(host);
     const t0 = Date.now();
     const durations: number[] = [];
     for (const round of [1, 2]) {
@@ -80,9 +81,6 @@ test.describe('rematch @online', () => {
       durations.push(Date.now() - started);
       await expect(host.page.getByTestId('back-to-lobby')).toBeVisible();
       for (const f of friends) await expect(f.page.getByTestId('back-to-lobby')).toBeHidden();
-      const split = new Map<Player, number>();
-      for (const f of friends) split.set(f, (await received(f)).length);
-      games.push({ log: await hostSecrets(host), split });
 
       if (round === 1) {
         await host.page.getByTestId('back-to-lobby').click();
@@ -99,29 +97,37 @@ test.describe('rematch @online', () => {
       }
     }
 
-    // Each game's messages pass the hidden-information audit against that game's log.
+    // Each game's messages pass the hidden-information audit against that game's
+    // log. Friends' messages are read first: the host's logs then cover them all.
+    const inbox = new Map<Player, Awaited<ReturnType<typeof received>>>();
+    for (const f of friends) inbox.set(f, await received(f));
+    const games = await allGameSecrets(host);
+    expect(games).toHaveLength(2);
     const summary: Record<string, unknown> = {
       transport: process.env.NET ?? 'default',
       totalMs: Date.now() - t0,
       gameMs: durations,
-      results: games.map((g) => g.log.log.find((e) => e.type === 'gameOver')),
+      results: games.map((g) => g.log.find((e) => e.type === 'gameOver')),
     };
     for (const f of friends) {
-      const all = await received(f);
+      const all = inbox.get(f)!;
       expect(all.some((m) => m.t === 'closed')).toBe(false);
-      const slices = [all.slice(0, games[0]!.split.get(f)), all.slice(games[0]!.split.get(f))];
+      const byGame = messagesByGame(all);
       const counts: number[] = [];
-      slices.forEach((messages, i) => {
-        expect(messages.filter((m) => m.t === 'view').length).toBeGreaterThan(5);
+      for (const [round, messages] of byGame) {
+        const game = round === 0 ? { log: [], tokens: games[0]!.tokens } : games[round - 1];
+        expect(game, `round ${round}`).toBeDefined();
+        if (round > 0) expect(messages.filter((m) => m.t === 'view').length).toBeGreaterThan(5);
         const problems = auditClientMessages({
           playerId: seatOf.get(f)!,
           messages,
-          hostLog: games[i]!.log.log,
-          tokens: games[i]!.log.tokens,
+          hostLog: game!.log,
+          tokens: game!.tokens,
         });
-        expect(problems).toEqual([]);
-        counts.push(messages.length);
-      });
+        expect(problems, `${f.name} round ${round}`).toEqual([]);
+        if (round > 0) counts.push(messages.length);
+      }
+      expect(counts).toHaveLength(2);
       summary[f.name] = { messages: counts, welcomes: all.filter((m) => m.t === 'welcome').length };
     }
     console.log(`E2E-REMATCH ${JSON.stringify(summary)}`);
