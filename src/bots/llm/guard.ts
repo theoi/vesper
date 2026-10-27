@@ -23,7 +23,8 @@ export type GuardRule =
   | 'syndicate-slip'
   | 'self-claim'
   | 'self-incriminate'
-  | 'mourner-name';
+  | 'mourner-name'
+  | 'pet-name';
 
 export interface GuardContext {
   view: PlayerView;
@@ -32,7 +33,18 @@ export interface GuardContext {
 }
 
 const META =
-  /\b(here(?:'s|’s| is) (?:my|the|a) (?:line|message|reply|rewrite|version)|as an ai|an ai\b|ai model|language model|assistant|chatbot|anthropic|claude|system prompt|prompt|the draft|this draft|draft line|rewrite|rewritten|scripted|in character|out of character|ooc|i can(?:'|’)?t (?:help|assist)|i cannot (?:help|assist|comply)|as requested)\b/i;
+  /\b(here(?:'s|’s| is) (?:my|the|a) (?:line|message|reply|rewrite|version)|nicknames? only|all lowercase|lowercase only|quirks?|as an ai|an ai\b|ai model|language model|assistant|chatbot|anthropic|claude|system prompt|prompt|the draft|this draft|draft line|rewrite|rewritten|scripted|in character|out of character|ooc|i can(?:'|’)?t (?:help|assist)|i cannot (?:help|assist|comply)|as requested)\b/i;
+
+/** Endearments the model picks up from personas and from other players' lines. */
+const PET_NAME =
+  /\b(ducks|duckie|ducky|darling|darlin|sweetie|sweetheart|dearie|honey|hun|babe|luv|pal|buddy|chum)\b|\b(?:little|my|you) (?:duck|dear|love|pet)\b|,\s*(?:duck|dear|love|pet|hon|mate)\b/i;
+
+/** How each kind of night result is worded; a reply must keep the draft's wording. */
+const FINDING_WORDS: Partial<Record<string, RegExp>> = {
+  suspicious: /\b(suspicious|sus)\b/i,
+  clear: /\bclear(?:ed)?\b/i,
+  visited: /\bvisit/i,
+};
 
 /** Role names from other games in the genre; this game uses its own. */
 const FOREIGN_ROLES =
@@ -151,6 +163,7 @@ export function checkReply(text: string, ctx: GuardContext): GuardRule | null {
   if (text.length > ctx.maxChars) return 'too-long';
   if (META.test(text) && !META.test(draft)) return 'meta';
   if (FOREIGN_ROLES.test(text) && !FOREIGN_ROLES.test(draft)) return 'foreign-role';
+  if (PET_NAME.test(text) && !PET_NAME.test(draft)) return 'pet-name';
 
   // The line must still carry its speech act.
   const target = 'target' in act ? act.target : null;
@@ -174,6 +187,8 @@ export function checkReply(text: string, ctx: GuardContext): GuardRule | null {
     for (const r of act.results ?? []) {
       if (!mentionsName(text, name(r.target)) && mentionsName(draft, name(r.target)))
         return 'missing-result';
+      const word = FINDING_WORDS[r.finding];
+      if (word && word.test(draft) && !word.test(text)) return 'missing-result';
     }
   }
 
