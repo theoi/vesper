@@ -802,6 +802,13 @@
   opacity: 0;
 }
 
+/* A short stage (a phone): drop below the plate at the top. */
+@container (max-height: 420px) {
+  .vs-cameo {
+    top: 33%;
+  }
+}
+
 @keyframes vs-cam-in {
   from {
     opacity: 0;
