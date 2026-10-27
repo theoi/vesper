@@ -4,6 +4,21 @@ import type { ClientMessage, HostMessage } from './protocol.ts';
 import { NetError, type ClientTransport, type HostTransport, type Transport } from './transport.ts';
 
 const APP_ID = 'vesper-social-deduction';
+/**
+ * Nostr relays for signaling. Trystero otherwise picks 5 of its built-in relays from the app id,
+ * and for ours that meant one that refused connections, one that blocks the ephemeral event kinds
+ * Trystero uses, and one that rate-limits. These accept kinds 20000-29999 from an unknown key,
+ * deliver them to subscribers, and took a 40-event burst without limits.
+ * `tests/e2e/nostr-relays.spec.ts` checks they still do.
+ */
+export const NOSTR_RELAYS = [
+  'wss://nos.lol',
+  'wss://relay.primal.net',
+  'wss://relay.snort.social',
+  'wss://nostr.mom',
+  'wss://cdn.satellite.earth',
+  'wss://relay.nostr.net',
+];
 /** Trystero can't tell "no such room" from "slow"; give up after this long. */
 const FIND_HOST_TIMEOUT_MS = 8000;
 
@@ -12,7 +27,10 @@ type Wire = { k: 'host' } | { k: 'msg'; m: JsonValue };
 async function join(code: string): Promise<Room> {
   if (typeof RTCPeerConnection === 'undefined') throw new NetError('unsupported');
   const { joinRoom } = await import('trystero');
-  return joinRoom({ appId: APP_ID, rtcConfig: { iceServers: ICE_SERVERS } }, `room-${code}`);
+  return joinRoom(
+    { appId: APP_ID, rtcConfig: { iceServers: ICE_SERVERS }, relayConfig: { urls: NOSTR_RELAYS } },
+    `room-${code}`,
+  );
 }
 
 class TrysteroHost implements HostTransport {
