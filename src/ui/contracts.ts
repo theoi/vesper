@@ -33,8 +33,11 @@ export interface StageApi {
 }
 
 export interface DirectorApi {
-  /** Feed every new view; the director reads events it has not seen (by seq) and stages them. */
-  feed(view: PlayerView): void;
+  /**
+   * Feed every new view; the director reads events it has not seen (by seq) and stages them.
+   * `clockOffset` (add to `Date.now()` for host time) lets sequences fit the phase timer.
+   */
+  feed(view: PlayerView, clockOffset?: number): void;
   /** Skip the sequence that is playing. */
   skip(): void;
   /** After the game: replay every night in shadow ("what really happened"). */

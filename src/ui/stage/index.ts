@@ -5,7 +5,7 @@ import type { GameAudio, LobbySeat, PickMode, StageApi } from '../contracts.ts';
 import { allArtUrls, castFaces, HAND, type Act, type Face } from './art.ts';
 import { Cloth, type Look } from './cloth.ts';
 import { Film, type Tone } from './film.ts';
-import { closeup, type Close } from './portrait.ts';
+import { closeup, type Close, type CloseOptions } from './portrait.ts';
 import { Shade } from './shade.ts';
 
 export { type Act, type Face } from './art.ts';
@@ -14,6 +14,16 @@ export { type Shade } from './shade.ts';
 
 /** Fraction of the stage height (from the bottom) taken by the floor in front of the cloth. */
 const FLOOR = 0.22;
+
+/** A brief face inset over the cloth for a beat of the day. */
+export type CameoKind = 'accuse' | 'sweat' | 'whisper' | 'claim';
+
+const CAMEO_MS: Record<CameoKind, number> = {
+  accuse: 1700,
+  sweat: 1700,
+  whisper: 1400,
+  claim: 2100,
+};
 
 interface Member {
   id: PlayerId;
@@ -74,6 +84,12 @@ export interface Stage extends StageApi {
   hand(words: string): void;
   /** The trial inset: a close-up of the defendant beside the cloth. */
   inset(): Close | null;
+  /**
+   * A face cameo for about a second and a half: an accusation (the accuser's eyes, the
+   * accused's flinch), votes piling up (sweat), a whisper (two glances), or a claim (the
+   * claimant speaks). Replaces any cameo on show. False when there is no face to show.
+   */
+  cameo(kind: CameoKind, a: PlayerId, b?: PlayerId | null): boolean;
   clearOver(): void;
   /** A temporary shade that belongs to no seat (a watchman, a stranger). */
   extra(x: number, fig: 'm' | 'w', dim?: number): Shade;
@@ -122,6 +138,8 @@ class ScrimStage implements Stage {
   private readonly over: HTMLElement;
   private readonly insetEl: HTMLElement;
   private insetClose: { id: PlayerId; c: Close } | null = null;
+  private readonly cameos: HTMLElement;
+  private cam: { el: HTMLElement; closes: Close[]; timer: number } | null = null;
   private members = new Map<PlayerId, Member>();
   private castKey = '';
   private mode: 'none' | 'lobby' | 'game' = 'none';
@@ -160,6 +178,7 @@ class ScrimStage implements Stage {
     this.candles.className = 'vs-candles';
     this.over = div('vs-over');
     this.insetEl = div('vs-inset');
+    this.cameos = div('vs-cameos');
     this.el.append(
       canvas,
       this.shadows,
@@ -167,6 +186,7 @@ class ScrimStage implements Stage {
       this.hits,
       this.candles,
       this.over,
+      this.cameos,
       this.insetEl,
       this.film.el,
     );
@@ -319,6 +339,7 @@ class ScrimStage implements Stage {
     for (const m of keep.values()) m.shade.el.remove();
     this.candles.style.setProperty('--n', String(n));
     this.candles.classList.toggle('crowd', n >= 7);
+    this.candles.classList.toggle('dense', n >= 11);
     this.castKey = key;
   }
 
@@ -396,7 +417,9 @@ class ScrimStage implements Stage {
       if (pips) pips.textContent = votes > 0 ? '•'.repeat(Math.min(votes, 9)) : '';
       const tag = li.querySelector('.vs-tag');
       const role = p.role ? ROLES[p.role].name : p.magistrateRevealed ? 'Magistrate' : '';
-      if (tag) tag.textContent = p.id === view.you.id ? `you · ${role}` : role;
+      // A big cast leaves no room for "you ·"; the underlined name already marks you.
+      const mine = p.id === view.you.id && this.members.size < 11;
+      if (tag) tag.textContent = mine ? `you · ${role}` : role;
       const status = !p.alive
         ? ', dead'
         : view.trial?.defendant === p.id
@@ -696,6 +719,77 @@ class ScrimStage implements Stage {
     return this.insetClose?.c ?? null;
   }
 
+  cameo(kind: CameoKind, a: PlayerId, b: PlayerId | null = null): boolean {
+    const fa = this.faceOf(a);
+    const fb = b ? this.faceOf(b) : undefined;
+    const pair = kind === 'accuse' || kind === 'whisper';
+    if (!fa || (pair && (!b || !fb))) return false;
+    this.dropCameo(0);
+    const me = this.view?.you.id;
+    const closes: Close[] = [];
+    const frame = (id: PlayerId, face: Face, o: CloseOptions, cls: string) => {
+      const c = closeup(face, { blink: false, ...o });
+      closes.push(c);
+      const pic = div(`vs-cam ${cls}`);
+      pic.append(c.el, div('vs-cam-name', id === me ? 'You' : this.nameOf(id)));
+      return { pic, c };
+    };
+    const box = div(`vs-cameo k-${kind}`);
+    let x = this.markOf(a);
+    if (pair && b && fb) {
+      const xb = this.markOf(b);
+      const aLeft = x <= xb;
+      x = (x + xb) / 2;
+      let first: HTMLElement;
+      let second: HTMLElement;
+      if (kind === 'accuse') {
+        // The accuser's eyes in a letterbox strip; the accused's whole face, flinching.
+        first = frame(a, fa, { x: 'neutral', z: 3.3, ay: 0.98, push: true }, 'eyes').pic;
+        const hit = frame(b, fb, { x: 'afraid', z: 1.5, ay: 0.52 }, 'iris');
+        second = hit.pic;
+        window.setTimeout(() => hit.c.p.flinch(), 260);
+      } else {
+        // Each glances toward the other.
+        const glance = (toRight: boolean) => `iris small glance-${toRight ? 'r' : 'l'}`;
+        first = frame(a, fa, { x: 'neutral', z: 1.5, ay: 0.52 }, glance(aLeft)).pic;
+        second = frame(b, fb, { x: 'neutral', z: 1.5, ay: 0.52 }, glance(!aLeft)).pic;
+      }
+      box.append(...(aLeft ? [first, second] : [second, first]));
+    } else if (kind === 'sweat') {
+      const f = frame(a, fa, { x: 'afraid', z: 1.6, ay: 0.5 }, 'iris');
+      f.c.el.append(div('vs-sweat'));
+      box.append(f.pic);
+    } else {
+      const f = frame(a, fa, { x: 'neutral', z: 1.5, ay: 0.52 }, 'iris');
+      f.c.p.talk(CAMEO_MS.claim - 500);
+      box.append(f.pic);
+    }
+    // Stay clear of a will that is still being read on the right.
+    const right = this.over.querySelector('.vs-letter.linger') ? 56 : 84;
+    box.style.left = `${Math.min(right, Math.max(16, x))}%`;
+    this.cameos.append(box);
+    this.cam = {
+      el: box,
+      closes,
+      timer: window.setTimeout(() => this.dropCameo(320), CAMEO_MS[kind]),
+    };
+    return true;
+  }
+
+  private dropCameo(ms: number): void {
+    const cam = this.cam;
+    if (!cam) return;
+    this.cam = null;
+    window.clearTimeout(cam.timer);
+    const gone = () => {
+      for (const c of cam.closes) c.p.dispose();
+      cam.el.remove();
+    };
+    if (ms <= 0) return gone();
+    cam.el.classList.add('out');
+    window.setTimeout(gone, ms);
+  }
+
   spirit(text: string, tone: Tone, sub?: string): HTMLElement {
     const el = div(`vs-spirit tone-${tone}`);
     const line = div('vs-spirit-line', text);
@@ -889,6 +983,7 @@ class ScrimStage implements Stage {
     window.clearTimeout(this.handTimer);
     for (const t of this.walkTimers.values()) window.clearTimeout(t);
     this.insetClose?.c.p.dispose();
+    this.dropCameo(0);
     this.film.dispose();
     this.cloth.dispose();
     this.el.remove();

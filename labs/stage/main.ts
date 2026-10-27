@@ -96,43 +96,53 @@ const SCENES: Scene[] = [
     group: 'Day opens',
     label: 'First day',
     view: () => viewAt('discussion'),
-    spec: { id: 'dayOpen', variant: 'first', day: 1 },
+    spec: { id: 'dayOpen', variant: 'first', day: 1, line: 'The company takes its marks.' },
   },
   {
     group: 'Day opens',
     label: 'Quiet night',
     view: () => viewAt('discussion'),
-    spec: { id: 'dayOpen', variant: 'quiet', day: 3 },
+    spec: { id: 'dayOpen', variant: 'quiet', day: 3, line: 'No one is missing. Not yet.' },
   },
   {
     group: 'Day opens',
     label: 'Mourning',
     view: () => viewAt('discussion', { dead: ['p4'] }),
-    spec: { id: 'dayOpen', variant: 'mourning', day: 2 },
+    spec: {
+      id: 'dayOpen',
+      variant: 'mourning',
+      day: 2,
+      line: 'A cold candle stands where someone was.',
+    },
   },
   {
     group: 'Nightfall',
     label: 'Lamps out',
     view: () => viewAt('night'),
-    spec: { id: 'nightfall', variant: 'lamps', first: false },
+    spec: { id: 'nightfall', variant: 'lamps', first: false, line: '' },
   },
   {
     group: 'Nightfall',
     label: 'Fog',
     view: () => viewAt('night'),
-    spec: { id: 'nightfall', variant: 'fog', first: false },
+    spec: { id: 'nightfall', variant: 'fog', first: false, line: '' },
   },
   {
     group: 'Nightfall',
     label: "Watchman's lantern",
     view: () => viewAt('night'),
-    spec: { id: 'nightfall', variant: 'lantern', first: false },
+    spec: { id: 'nightfall', variant: 'lantern', first: false, line: '' },
   },
   {
     group: 'Nightfall',
     label: 'First night',
     view: () => viewAt('night'),
-    spec: { id: 'nightfall', variant: 'fog', first: true },
+    spec: {
+      id: 'nightfall',
+      variant: 'fog',
+      first: true,
+      line: 'Doors are barred. Some of them will open.',
+    },
   },
   {
     group: 'Dawn',
@@ -394,6 +404,55 @@ const SCENES: Scene[] = [
       await t.wait(3200);
       stage.hand('Tell me and I will carry it into the light.');
       await t.wait(6500);
+    },
+  },
+  {
+    group: 'Faces',
+    label: 'Accusation',
+    view: () => viewAt('discussion'),
+    run: async (t) => {
+      stage.shadeOf('p2')?.act('accuse', 200);
+      stage.shadeOf('p6')?.act('recoil', 250);
+      stage.cameo('accuse', 'p2', 'p6');
+      await t.wait(2200);
+    },
+  },
+  {
+    group: 'Faces',
+    label: 'Votes pile up',
+    view: () => viewAt('voting'),
+    run: async (t) => {
+      stage.cameo('sweat', 'p4');
+      await t.wait(2200);
+    },
+  },
+  {
+    group: 'Faces',
+    label: 'Whisper',
+    view: () => viewAt('discussion'),
+    run: async (t) => {
+      stage.thread('p1', 'p5');
+      stage.cameo('whisper', 'p1', 'p5');
+      await t.wait(1900);
+    },
+  },
+  {
+    group: 'Faces',
+    label: 'Claim',
+    view: () => viewAt('discussion'),
+    run: async (t) => {
+      stage.plate('“I am the Augur.”', 'Silas', 2600);
+      stage.cameo('claim', 'p3');
+      await t.wait(2800);
+    },
+  },
+  {
+    group: 'Faces',
+    label: 'You are accused',
+    view: () => viewAt('discussion'),
+    run: async (t) => {
+      stage.cameo('accuse', 'p7', 'p0');
+      await t.wait(2200);
     },
   },
   {

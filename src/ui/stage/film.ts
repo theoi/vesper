@@ -10,6 +10,8 @@ export interface CardText {
   role?: string;
   body?: string;
   tone?: Tone;
+  /** A small oval portrait above the text, eyes closed (a death card). */
+  face?: Face;
 }
 
 function div(cls: string, text?: string): HTMLDivElement {
@@ -68,13 +70,19 @@ export class Film {
   /** An intertitle: ink card, double rule, Old Standard type. */
   card(t: CardText, cls = ''): HTMLElement {
     const frame = div('vs-frame');
+    const closes: Close[] = [];
+    if (t.face) {
+      const c = closeup(t.face, { x: 'closed', z: 1.5, ay: 0.52, blink: false, cls: 'vs-medal' });
+      closes.push(c);
+      frame.append(c.el);
+    }
     if (t.kicker) frame.append(div('vs-k', t.kicker));
     if (t.title) frame.append(div('vs-title', t.title));
     if (t.role) frame.append(div(`vs-role tone-${t.tone ?? 'paper'}`, t.role));
     if (t.body) frame.append(div('vs-body', t.body));
     const shot = div(`vs-card ${cls}`);
     shot.append(frame);
-    return this.cut(shot);
+    return this.cut(shot, closes);
   }
 
   /** A full-frame close-up. */

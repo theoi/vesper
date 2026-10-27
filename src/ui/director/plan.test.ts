@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { GameEvent, GameEventBody, PlayerView } from '../../engine/index.ts';
-import { newMemo, pickVariant, plan, type SeqSpec } from './plan.ts';
+import {
+  CameoGate,
+  CATCH_UP_SEQ_MS,
+  DAY_LINES,
+  fitSpeed,
+  MAX_FIT,
+  newMemo,
+  pickVariant,
+  plan,
+  type SeqSpec,
+} from './plan.ts';
 
 let seq = 0;
 function ev(body: GameEventBody, at = 1000 + seq * 10, day = 2): GameEvent {
@@ -101,6 +111,26 @@ describe('plan', () => {
     expect(quiet[0]).toMatchObject({ id: 'dayOpen', variant: 'quiet' });
   });
 
+  it('words the day-open plate for how many died, and varies it from day to day', () => {
+    const lineFor = (dead: number, day: number) => {
+      const memo = newMemo('room');
+      memo.lastDawnDeaths = dead;
+      const [s] = seqs(
+        plan(
+          [ev({ type: 'phase', phase: 'discussion', day, endsAt: 0 }, day * 1000)],
+          view(),
+          memo,
+        ),
+      );
+      return s?.id === 'dayOpen' ? s.line : '';
+    };
+    const many = Array.from({ length: 12 }, (_, d) => lineFor(3, d + 2));
+    for (const l of many) expect(l).toMatch(/three|Three/);
+    const one = Array.from({ length: 12 }, (_, d) => lineFor(1, d + 2));
+    for (const l of one) expect(DAY_LINES.mourning).toContain(l);
+    expect(new Set(one).size).toBeGreaterThan(1);
+  });
+
   it('stages an execution together with the death it causes', () => {
     const out = seqs(
       plan(
@@ -170,5 +200,48 @@ describe('plan', () => {
     expect(beats(plan([line('a')], mourner, newMemo('k')))).toEqual([
       { type: 'mourner', text: 'who came?' },
     ]);
+  });
+});
+
+describe('CameoGate', () => {
+  it('holds back a second cameo inside the gap unless it matters more', () => {
+    const g = new CameoGate(2000, 0);
+    expect(g.allow(0, ['a'], 1)).toBe(true);
+    expect(g.allow(500, ['b'], 1)).toBe(false);
+    expect(g.allow(600, ['c'], 0)).toBe(false);
+    expect(g.allow(700, ['d'], 2)).toBe(true);
+    expect(g.allow(2800, ['e'], 0)).toBe(true);
+  });
+
+  it('rests a face before it can appear again', () => {
+    const g = new CameoGate(0, 5000);
+    expect(g.allow(0, ['a', 'b'], 1)).toBe(true);
+    expect(g.allow(1000, ['b'], 2)).toBe(false);
+    expect(g.allow(1000, ['c'], 2)).toBe(true);
+    expect(g.allow(5200, ['b'], 0)).toBe(true);
+  });
+
+  it('always lets an urgent cameo through', () => {
+    const g = new CameoGate(2000, 5000);
+    expect(g.allow(0, ['a'], 3)).toBe(true);
+    expect(g.allow(100, ['a'], 0, true)).toBe(true);
+  });
+});
+
+describe('fitSpeed', () => {
+  it('plays at normal speed when the phase has time to spare, or no timer', () => {
+    expect(fitSpeed(3000, 20_000, false)).toBe(1);
+    expect(fitSpeed(3000, null, false)).toBe(1);
+  });
+
+  it('speeds a sequence up so it ends with its phase, within limits', () => {
+    expect(fitSpeed(4900, 4000 + 250, false)).toBeCloseTo(4900 / 4000);
+    expect(fitSpeed(9000, 2000, false)).toBe(MAX_FIT);
+    expect(fitSpeed(3000, 100, false)).toBe(MAX_FIT);
+  });
+
+  it('catches up in about a second once its phase is over', () => {
+    expect(fitSpeed(5300, 20_000, true)).toBeCloseTo(5300 / CATCH_UP_SEQ_MS);
+    expect(fitSpeed(1200, 20_000, true)).toBe(MAX_FIT);
   });
 });
