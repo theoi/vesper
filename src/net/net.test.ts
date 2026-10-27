@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { viewFor, type GameEvent, type PlayerView } from '../engine/index.ts';
 import { auditClientMessages } from '../../tests/support/leak-audit.ts';
 import { ClientSession } from './client.ts';
 import { HostSession, parseHostSave, type HostSave } from './host.ts';
@@ -6,6 +7,7 @@ import { randomId } from './identity.ts';
 import { createMemoryNetwork, type MemoryNetwork } from './memory.ts';
 import { parseClientMessage, type HostMessage } from './protocol.ts';
 import { normalizeCode, randomCode, roomFromUrl, roomLink } from './room.ts';
+import { ViewChannel, mergeView } from './session.ts';
 import { NetError } from './transport.ts';
 
 const flush = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
@@ -522,5 +524,51 @@ describe('host resume', () => {
     expect(parseHostSave({ ...save, protocol: 0 })).toBeNull();
     expect(parseHostSave({ ...save, status: 'playing' })).toBeNull();
     expect(parseHostSave('nope')).toBeNull();
+  });
+});
+
+describe('view patches', () => {
+  it('rebuilds exactly the full view from patches that carry only what changed', async () => {
+    const host = new HostSession({ hostName: 'Solo', transport: null });
+    await host.open();
+    host.fillWithBots(12);
+    host.updateSettings({ pace: 'fast' });
+    expect(host.start()).toBeNull();
+    const ids = host.debugState().game!.players.map((p) => p.id);
+    const channels = ids.map((id) => new ViewChannel(id));
+    const views = new Map<string, PlayerView | null>();
+    const noSeq = (events: readonly GameEvent[]) => events.map(({ seq: _seq, ...e }) => e);
+    let patches = 0;
+    let patchBytes = 0;
+    let wholeBytes = 0;
+    let quiet = 0;
+    for (let i = 0; i < 1200 && host.snapshot().status !== 'ended'; i++) {
+      await flush(1000);
+      const game = host.debugState().game!;
+      channels.forEach((ch, k) => {
+        const id = ids[k]!;
+        const update = ch.next(game);
+        if (!update) {
+          quiet++;
+          return;
+        }
+        const merged = mergeView(views.get(id) ?? null, update);
+        views.set(id, merged);
+        const { events, lastSeq: _a, ...fields } = merged!;
+        const { events: allEvents, lastSeq: _b, ...want } = viewFor(game, id);
+        expect(fields).toEqual(want);
+        expect(noSeq(events)).toEqual(noSeq(allEvents));
+        if (!update.full) {
+          patches++;
+          patchBytes += JSON.stringify(update.view).length;
+          wholeBytes += JSON.stringify({ ...want, events: update.view.events }).length;
+        }
+      });
+    }
+    expect(host.snapshot().status).toBe('ended');
+    expect(patches).toBeGreaterThan(100);
+    expect(quiet).toBeGreaterThan(0);
+    // Seats, the role list, and timers rarely change, so patches stay small.
+    expect(patchBytes).toBeLessThan(wholeBytes / 3);
   });
 });

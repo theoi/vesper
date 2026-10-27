@@ -5,6 +5,7 @@ import {
   type PlayerView,
 } from '../../src/engine/index.ts';
 import type { HostMessage } from '../../src/net/protocol.ts';
+import { mergeView } from '../../src/net/session.ts';
 
 /**
  * Hidden-information audit for one client's received messages.
@@ -34,6 +35,8 @@ export function auditClientMessages(input: {
   }
   const seen = new Map<string, number>();
   const tokenList = Object.keys(tokens);
+  // Patches are checked on the view the client builds from them.
+  let current: PlayerView | null = null;
 
   messages.forEach((msg, i) => {
     const json = JSON.stringify(msg);
@@ -47,12 +50,15 @@ export function auditClientMessages(input: {
       if (json.includes(key)) problems.push(`#${i} ${msg.t}: contains host-only field ${key}`);
     }
     if (msg.t !== 'view') return;
-    const view = msg.view;
-    if (view.you.id !== playerId) problems.push(`#${i}: view is for ${view.you.id}`);
-    problems.push(...roleLeaks(view).map((p) => `#${i}: ${p}`));
+    if (!msg.full && !current) problems.push(`#${i}: view patch before any full view`);
+    current = mergeView(current, msg);
+    if (current) {
+      if (current.you.id !== playerId) problems.push(`#${i}: view is for ${current.you.id}`);
+      problems.push(...roleLeaks(current).map((p) => `#${i}: ${p}`));
+    }
     if (msg.full) seen.clear();
     let lastSeq = 0;
-    for (const e of view.events) {
+    for (const e of msg.view.events) {
       if (e.seq <= lastSeq) problems.push(`#${i}: event seq not increasing`);
       lastSeq = e.seq;
       const k = strip(e);
