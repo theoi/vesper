@@ -4,7 +4,14 @@
  */
 import { Rng } from '../engine/rng.ts';
 import { ROLES } from '../engine/roles.ts';
-import type { Intent, PlayerId, PlayerView, SpeechAct } from '../engine/types.ts';
+import type {
+  ClaimedResult,
+  Intent,
+  PlayerId,
+  PlayerView,
+  RoleId,
+  SpeechAct,
+} from '../engine/types.ts';
 import { DEATH_NOTES, render, type Category, type RenderInput } from './lines.ts';
 import {
   clearedByMe,
@@ -18,6 +25,7 @@ import {
 } from './knowledge.ts';
 import { ingest, type Mind } from './memory.ts';
 import {
+  answerRole,
   ballotChoice,
   chooseCover,
   claimNow,
@@ -138,9 +146,14 @@ export function decideBot(bot: BotState, view: PlayerView, now: number): BotDeci
   const key = `${view.phase.kind}:${view.phase.day}:${view.phase.startedAt}`;
   if (key !== turn.mem.phaseKey) onPhase(turn, key);
   // Reactions to events from the current phase go to the front of the queue.
+  let answer = false;
   for (const r of turn.reactive.reverse()) {
-    if (r.at >= view.phase.startedAt) turn.mem.queue.unshift(r.topic);
+    if (r.at < view.phase.startedAt) continue;
+    turn.mem.queue.unshift(r.topic);
+    answer ||= isDirect(r.topic);
   }
+  // Someone spoke to us: answer within a few seconds rather than at our usual pace.
+  if (answer) turn.mem.nextChatAt = Math.min(turn.mem.nextChatAt, now + rand(turn, 1200, 3500));
   act(turn);
   const wakeAt = nextWake(turn);
   return {
@@ -199,6 +212,20 @@ function maxLines(t: Turn): number {
     default:
       return 0;
   }
+}
+
+/** Answers to someone who spoke to us. They may run a little past the usual line budget. */
+const DIRECT_EXTRA = 2;
+
+function isDirect(topic: Topic): boolean {
+  return topic.t === 'reply' || topic.t === 'defendSelf' || topic.t === 'counterClaim';
+}
+
+/** Whether the bot still has something it may say this phase. */
+function hasMoreToSay(t: Turn): boolean {
+  const { said, queue } = t.mem;
+  const max = maxLines(t);
+  return said < max ? queue.length > 0 : said < max + DIRECT_EXTRA && queue.some(isDirect);
 }
 
 function gap(t: Turn): number {
@@ -538,7 +565,7 @@ function maybeReady(t: Turn): void {
   // Never end a phase in the same turn as speaking, or the line would be rejected.
   if (!v.allowed.ready || v.you.ready || t.now < mem.readyAt || t.speech.length > 0) return;
   const k = v.phase.kind;
-  const quiet = mem.queue.length === 0 || mem.said >= maxLines(t);
+  const quiet = !hasMoreToSay(t);
   if (k === 'night' && !mem.acted) return;
   if (k === 'defense' || k === 'lastWords') {
     if (quiet) t.intents.push({ type: 'ready', ready: true });
@@ -573,9 +600,11 @@ function channelFor(t: Turn, topic: Topic): 'public' | 'mafia' | 'dead' | 'whisp
 
 function speak(t: Turn): void {
   const mem = t.mem;
-  if (mem.said >= maxLines(t) || t.now < mem.nextChatAt) return;
+  if (!hasMoreToSay(t) || t.now < mem.nextChatAt) return;
+  const over = mem.said >= maxLines(t);
   while (mem.queue.length > 0) {
     const topic = mem.queue.shift() as Topic;
+    if (over && !isDirect(topic)) continue;
     const channel = channelFor(t, topic);
     if (!channel) continue;
     const line = toLine(t, topic);
@@ -735,26 +764,24 @@ function toLine(t: Turn, topic: Topic): Line | null {
         { kind: 'react', about: 'verdict', target: topic.player },
       );
     }
-    case 'claim': {
-      if (mem.claimed && mem.claimed !== topic.role) return null;
-      const results = topic.results ?? [];
-      const act: SpeechAct =
-        results.length > 0
-          ? { kind: 'claim', role: topic.role, results }
-          : { kind: 'claim', role: topic.role };
-      const r = ROLES[topic.role].name;
-      if (results.length > 0)
-        return say(t, 'claimResult', { r, x: describeResults(v, results) }, act);
-      return say(t, 'claim', { r }, act);
-    }
-    case 'accuse': {
-      if (!isAlive(v, topic.target)) return null;
-      const confidence = Math.min(1, Math.max(0.3, score(mem, topic.target) / 8));
+    case 'claim':
+      return claimLine(t, topic.role, topic.results ?? []);
+    case 'accuse':
+      return accuseLine(t, topic.target, topic.hard);
+    case 'counterClaim': {
+      if (!isAlive(v, topic.target) || (mem.claimed && mem.claimed !== topic.role)) return null;
+      const results = claimResults(t, topic.role);
       return say(
         t,
-        topic.hard ? 'accuseHard' : 'accuse',
-        { t: name(topic.target), x: reasonText(t, topic.target) },
-        { kind: 'accuse', target: topic.target, confidence },
+        'counterClaim',
+        {
+          t: name(topic.target),
+          r: ROLES[topic.role].name,
+          x: results.length > 0 ? describeResults(v, results) : '',
+        },
+        results.length > 0
+          ? { kind: 'claim', role: topic.role, results }
+          : { kind: 'claim', role: topic.role },
       );
     }
     case 'defendSelf': {
@@ -894,8 +921,7 @@ function toLine(t: Turn, topic: Topic): Line | null {
     case 'bait':
       return say(t, 'harlequinBait', {}, { kind: 'banter' });
     case 'reply':
-      if (!isAlive(v, topic.to)) return null;
-      return say(t, 'reply', { t: name(topic.to) }, { kind: 'defend', target: v.you.id });
+      return replyLine(t, topic);
     case 'whisperClaim':
       return say(
         t,
@@ -913,13 +939,70 @@ function toLine(t: Turn, topic: Topic): Line | null {
   }
 }
 
+function claimLine(t: Turn, role: RoleId, results: ClaimedResult[]): Line | null {
+  if (t.mem.claimed && t.mem.claimed !== role) return null;
+  const act: SpeechAct =
+    results.length > 0 ? { kind: 'claim', role, results } : { kind: 'claim', role };
+  const r = ROLES[role].name;
+  if (results.length > 0)
+    return say(t, 'claimResult', { r, x: describeResults(t.view, results) }, act);
+  return say(t, 'claim', { r }, act);
+}
+
+function accuseLine(t: Turn, target: PlayerId, hard: boolean): Line | null {
+  if (!isAlive(t.view, target)) return null;
+  const confidence = Math.min(1, Math.max(0.3, score(t.mem, target) / 8));
+  return say(
+    t,
+    hard ? 'accuseHard' : 'accuse',
+    { t: nameOf(t.view, target), x: reasonText(t, target) },
+    { kind: 'accuse', target, confidence },
+  );
+}
+
+/** Who we would name if asked, or null when nobody stands out above `bar`. */
+function suspectToName(t: Turn, bar: number): PlayerId | null {
+  const top = topSuspect(t, heldClear(t));
+  if (!top) return null;
+  const side = sideNow(t);
+  const bluff = side === 'mafia' || side === 'cutthroat';
+  // A Syndicate bot names the scapegoat the town already leans toward.
+  const s = bluff ? (t.mem.suspicion[top] ?? 0) + 0.5 : score(t.mem, top);
+  return s >= bar ? top : null;
+}
+
+/** Answer a question with an act that fits it: a claim, a suspect, or a plain reply. */
+function replyLine(t: Turn, topic: Extract<Topic, { t: 'reply' }>): Line | null {
+  const v = t.view;
+  if (!topic.open && !isAlive(v, topic.to)) return null;
+  const asker = { t: nameOf(v, topic.to) };
+  const self: SpeechAct = { kind: 'defend', target: v.you.id };
+  switch (topic.ask) {
+    case 'role': {
+      const role = answerRole(t);
+      if (role) return claimLine(t, role, claimResults(t, role));
+      return say(t, 'replyHold', asker, self);
+    }
+    case 'suspect': {
+      const top = suspectToName(t, 1);
+      if (top) return accuseLine(t, top, score(t.mem, top) >= 7);
+      return topic.open ? null : say(t, 'replyNoRead', asker, { kind: 'banter' });
+    }
+    default: {
+      const top = suspectToName(t, 2.5);
+      if (top && t.rng.chance(0.5)) return accuseLine(t, top, false);
+      return say(t, 'reply', asker, self);
+    }
+  }
+}
+
 function nextWake(t: Turn): number {
   const v = t.view;
   const mem = t.mem;
   const now = t.now;
   const options: number[] = [];
   if (v.phase.endsAt !== null) options.push(v.phase.endsAt);
-  if (mem.queue.length > 0 && mem.said < maxLines(t)) options.push(mem.nextChatAt);
+  if (hasMoreToSay(t)) options.push(mem.nextChatAt);
   if (!mem.acted && ['voting', 'judgment', 'night'].includes(v.phase.kind) && v.you.alive)
     options.push(mem.actAt);
   if (v.phase.kind === 'voting' && v.you.alive) options.push(mem.flags.nextVoteCheck ?? now + 3000);

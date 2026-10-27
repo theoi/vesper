@@ -269,6 +269,12 @@ export function describeTask(view: PlayerView, speech: BotSpeech): string {
       return other
         ? `Answer ${other}, who just spoke to you, while standing by your own story.`
         : 'Answer whoever just spoke to you, while standing by your own story.';
+    case 'replyHold':
+      return `${other ?? 'Someone'} asked your role. Say you are not claiming yet, without naming any role.`;
+    case 'replyNoRead':
+      return `Answer ${other ?? 'them'}: nobody stands out to you yet. Name no one else.`;
+    case 'counterClaim':
+      return `${other ?? 'Someone'} just claimed your role. Call them a liar: you are the real ${role}.${results}`;
     case 'whisperClaim':
       return `Whisper that you are the ${role}.`;
     case 'trialReact':

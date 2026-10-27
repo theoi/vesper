@@ -53,6 +53,9 @@ export type Category =
   | 'endLose'
   | 'endDraw'
   | 'reply'
+  | 'replyHold'
+  | 'replyNoRead'
+  | 'counterClaim'
   | 'whisperClaim'
   | 'trialReact';
 
@@ -421,6 +424,28 @@ export const LINES: Record<Category, string[]> = {
     'Fair question, {t}. I have nothing to hide.',
     "I'm watching the votes, {t}. That's my answer.",
     "{t}, I'm not the one you want.",
+  ],
+  replyHold: [
+    'Not claiming yet, {t}. Put me on trial and I will.',
+    "I'd rather not paint a target on myself, {t}.",
+    '{t}, claiming now only helps the killers.',
+    "Ask me again if I'm on the stand, {t}.",
+    "Town. That's all you get for now, {t}.",
+    "Nice try, {t}. I'll claim when it matters.",
+  ],
+  replyNoRead: [
+    'No strong read yet, {t}. Still watching.',
+    'Honestly, {t}, nobody stands out yet.',
+    'Too early to say, {t}. I want to see the votes.',
+    "I don't have a name yet, {t}. Give it time.",
+    "{t}, I'm undecided. Ask me after the vote.",
+  ],
+  counterClaim: [
+    "I'm the real {r}. {t} is lying. {x}.",
+    '{t} is lying. I am the {r}. {x}.',
+    "That's my role, {t}. I'm the {r}. {x}.",
+    'No. I am the {r}, and {t} is a fake. {x}.',
+    "There's only one {r}, {t}, and it's me. {x}.",
   ],
   whisperClaim: [
     "Between us: I'm the {r}.",

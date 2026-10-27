@@ -15,6 +15,7 @@ import type { RoleId } from '../engine/types.ts';
 import { viewFor } from '../engine/view.ts';
 import {
   PERSONALITIES,
+  askOf,
   createBot,
   decideBot,
   parseLine,
@@ -35,7 +36,11 @@ function driveAll(d: Driver, bots: BotState[], ms: number): { d: Driver; bots: B
   ) {
     for (let i = 0; i < list.length; i++) {
       const b = list[i] as BotState;
-      if (b.wakeAt > now) continue;
+      // Like the host: a bot also wakes when it has new events to see.
+      const fresh = cur.state.log
+        .slice(b.seenSeq)
+        .some((e) => e.audience === 'all' || e.audience.includes(b.id));
+      if (b.wakeAt > now && !fresh) continue;
       const out = decideBot(b, viewFor(cur.state, b.id, { sinceSeq: b.seenSeq }), now);
       list[i] = out.bot;
       for (const intent of [...out.speech.map((s) => s.intent), ...out.intents]) {
@@ -347,6 +352,100 @@ describe('Clear readings', () => {
     expect(turnsOnBea(dawn2(), 'p5', story)).toEqual({ accused: 0, votes: 0 });
   });
 });
+describe('answering people', () => {
+  // Ada Resident, Bea Resident, Cal Resident, Dov (the person typing), Eli Augur, Fay Patron, Gus Hatchet.
+  const ROLES: RoleId[] = [
+    'resident',
+    'resident',
+    'resident',
+    'resident',
+    'augur',
+    'patron',
+    'hatchet',
+  ];
+  const day1 = (roles = ROLES) => until(longGame(roles), 'discussion');
+  const say = (d: Driver, text: string) => act(d, 'p3', { type: 'chat', channel: 'public', text });
+
+  /** A bot that has seen the chat so far, with its memory then adjusted. */
+  function ready(
+    d: Driver,
+    id: string,
+    seed: number,
+    personality: string,
+    patch = (_: BotState['memory']) => {},
+  ) {
+    const now = d.state.phase.startedAt + 1;
+    const bot = structuredClone(
+      decideBot(createBot(id, seed, { personality }), viewFor(d.state, id), now).bot,
+    );
+    patch(bot.memory);
+    return bot;
+  }
+
+  const linesFrom = (d: Driver, id: string) =>
+    d.events.flatMap((e) =>
+      e.type === 'chat' && e.from === id && e.meta ? [{ at: e.at, act: e.meta }] : [],
+    );
+
+  it('a bot asked its role answers within seconds, with a claim or a reason to hold it', () => {
+    let claims = 0;
+    for (let seed = 0; seed < 10; seed++) {
+      const d = say(day1(), 'Ada, what is your role?');
+      const asked = d.state.phase.startedAt + 1;
+      const first = linesFrom(drive(d, ready(d, 'p0', seed, 'steady'), 8_000).d, 'p0')[0];
+      expect(first?.at).toBeLessThan(asked + 4_000);
+      expect([
+        { kind: 'claim', role: 'resident' },
+        { kind: 'defend', target: 'p0' },
+      ]).toContainEqual(first?.act);
+      if (first?.act.kind === 'claim') claims++;
+    }
+    expect(claims).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a Syndicate bot asked its role never gives its real one', () => {
+    for (let seed = 0; seed < 10; seed++) {
+      const d = say(day1(), 'Fay, claim please.');
+      for (const line of linesFrom(drive(d, ready(d, 'p5', seed, 'hothead'), 8_000).d, 'p5'))
+        if (line.act.kind === 'claim') expect(line.act.role).not.toBe('patron');
+    }
+  });
+
+  it('a bot asked who it suspects names its top suspect', () => {
+    for (let seed = 0; seed < 6; seed++) {
+      const d = say(day1(), 'Bea, who do you suspect?');
+      const bot = ready(d, 'p1', seed, 'steady', (m) => {
+        m.suspicion['p6'] = 4;
+      });
+      const first = linesFrom(drive(d, bot, 8_000).d, 'p1')[0];
+      expect(first?.act).toMatchObject({ kind: 'accuse', target: 'p6' });
+    }
+  });
+
+  it('the real Augur answers a fake Augur claim at once and calls it out', () => {
+    for (let seed = 0; seed < 6; seed++) {
+      const d = say(day1(), "I'm the Augur.");
+      const lines = linesFrom(drive(d, ready(d, 'p4', seed, 'steady'), 40_000).d, 'p4');
+      expect(lines[0]?.act).toEqual({ kind: 'claim', role: 'augur' });
+      expect(lines[0]?.at).toBeLessThan(d.state.phase.startedAt + 4_000);
+      expect(lines.map((l) => l.act)).toContainEqual(
+        expect.objectContaining({ kind: 'accuse', target: 'p3' }),
+      );
+    }
+  });
+
+  it('a bot that has used up its lines for the phase still answers an accusation', () => {
+    const mouse = PERSONALITIES.find((p) => p.id === 'mouse') as (typeof PERSONALITIES)[number];
+    for (let seed = 0; seed < 6; seed++) {
+      const d = say(day1(), 'Ada is Syndicate, I am sure.');
+      const bot = ready(d, 'p0', seed, 'mouse', (m) => {
+        m.said = 1 + Math.round(mouse.verbosity * 5);
+      });
+      const lines = linesFrom(drive(d, bot, 10_000).d, 'p0');
+      expect(lines.map((l) => l.act.kind)).toContain('defend');
+    }
+  });
+});
 describe('reading human chat', () => {
   const players = ['Ada', 'Bea', 'Cal', 'Dov'].map((name, i) => ({
     id: `p${i}`,
@@ -376,6 +475,31 @@ describe('reading human chat', () => {
     expect(parseLine('i am the mender', players, 'p0')).toEqual([
       { kind: 'claim', role: 'mender' },
     ]);
+  });
+
+  it('tells questions from accusations, and reads votes, doubts, and short claims', () => {
+    const read = (text: string) => parseLine(text, players, 'p3');
+    expect(read('Ada, are you Syndicate?')).toEqual([
+      { kind: 'accuse', target: 'p0', confidence: 0.4 },
+    ]);
+    expect(read('Bea, who do you think is sus?')).toEqual([{ kind: 'question', target: 'p1' }]);
+    expect(read('what is your role, Cal?')).toEqual([{ kind: 'question', target: 'p2' }]);
+    expect(read('Ada, claim please.')).toEqual([{ kind: 'question', target: 'p0' }]);
+    expect(read('Is Cal sus?')).toEqual([{ kind: 'accuse', target: 'p2', confidence: 0.3 }]);
+    expect(read('vote Cal')).toEqual([{ kind: 'accuse', target: 'p2', confidence: 0.6 }]);
+    expect(read("don't vote Cal")).toEqual([]);
+    expect(read("Bea, your story doesn't add up.")).toEqual([
+      { kind: 'accuse', target: 'p1', confidence: 0.6 },
+    ]);
+    expect(read('Augur here. Bea read Clear.')).toEqual([
+      { kind: 'claim', role: 'augur', results: [{ night: 0, target: 'p1', finding: 'clear' }] },
+    ]);
+  });
+
+  it('knows what a question asks for', () => {
+    expect(askOf("Ada, what's your role?")).toBe('role');
+    expect(askOf('Bea, who do you suspect?')).toBe('suspect');
+    expect(askOf("Cal, you've been quiet. Anything to share?")).toBe('open');
   });
 
   it('reads results out of a will', () => {
