@@ -176,6 +176,10 @@ export class AppController {
       ...(resume ? { resume } : {}),
       rewriteSpeech: async ({ view, speech }) => {
         const r = await this.chatLayer.rewrite(view, speech);
+        // Line counts and cost change with every line, but the layer only
+        // notifies on status changes, and lines the host can't see bring no
+        // snapshot that would refresh them.
+        this.refreshClaude();
         const reason = r.rule ? `guardrail:${r.rule}` : r.reason;
         return { text: r.text, source: r.source, ...(reason ? { reason } : {}) };
       },
