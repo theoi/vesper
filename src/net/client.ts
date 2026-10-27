@@ -22,7 +22,12 @@ export interface ClientOptions {
   timers?: TimerApi;
 }
 
-const CONNECT_TIMEOUT_MS = 20_000;
+/**
+ * Long enough for the default transport to try both halves: PeerJS can take
+ * 12 s to give up on signaling (or 15 s on ICE), then Trystero waits 8 s for
+ * the host. A shorter limit would cut off the Trystero fallback.
+ */
+const CONNECT_TIMEOUT_MS = 35_000;
 const WELCOME_TIMEOUT_MS = 10_000;
 const PING_MS = 4000;
 const HOST_SILENCE_MS = 12_000;

@@ -116,13 +116,15 @@ test.describe('online play @online', () => {
     console.log(`E2E-SUMMARY ${JSON.stringify(summary)}`);
 
     // The host closes the tab: friends wait out the reconnect window (the host
-    // might be reloading), then get a clear message.
+    // might be reloading), then get a clear message. A friend whose attempts
+    // never got an answer can't tell a closed room from a lost connection, so
+    // either ending is right.
     await host.page.close();
     for (const p of [ari, bo]) {
-      await expect(p.page.getByTestId('notice')).toHaveText(
-        'The host left, so the game has ended.',
-        { timeout: 90_000 },
-      );
+      await expect(p.page.getByTestId('notice')).toHaveAttribute('data-code', /^(hostLeft|lost)$/, {
+        timeout: 120_000,
+      });
+      await expect(p.page.getByTestId('notice')).toContainText('the game has ended');
     }
     for (const p of players) expect(p.errors).toEqual([]);
   });
