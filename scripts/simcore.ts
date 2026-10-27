@@ -178,6 +178,7 @@ export function auditResult(s: GameState): string[] {
   if (JSON.stringify(expected) !== JSON.stringify(r.winners.slice().sort())) {
     out.push(`winners mismatch: expected ${expected.join(',')} got ${r.winners.join(',')}`);
   }
+  out.push(...auditNights(s));
   // Harlequin wins must come from an execution; Accuser wins from the target's execution.
   for (const p of s.players) {
     if (!p.neutralWin) continue;
@@ -188,6 +189,31 @@ export function auditResult(s: GameState): string[] {
       if (target?.death?.causes[0] !== 'executed') out.push('accuser won without target execution');
     }
   }
+  return out;
+}
+
+/** The end-of-game night history must agree with the dawns and deaths the players saw. */
+function auditNights(s: GameState): string[] {
+  const out: string[] = [];
+  const dawns = s.log.filter((e) => e.type === 'dawn');
+  if (dawns.length !== s.nights.length) out.push('night history and dawn count differ');
+  const over = s.log.find((e) => e.type === 'gameOver');
+  if (over && JSON.stringify(over.nights) !== JSON.stringify(s.nights))
+    out.push('gameOver nights differ from the host record');
+  s.nights.forEach((n, i) => {
+    const dawn = dawns[i];
+    if (n.night !== i + 1) out.push(`night history out of order at ${i + 1}`);
+    if (dawn && JSON.stringify(dawn.deaths) !== JSON.stringify(n.deaths))
+      out.push(`night ${n.night}: history deaths differ from the dawn`);
+    for (const a of n.actions) {
+      const p = s.players.find((x) => x.id === a.actor);
+      const d = p?.death;
+      const aliveThen = !d || d.day > n.night || (d.time === 'night' && d.day === n.night);
+      if (!aliveThen) out.push(`night ${n.night}: ${a.actor} acted while dead`);
+      if (a.outcome === 'killed' && !n.deaths.includes(a.target))
+        out.push(`night ${n.night}: ${a.actor} killed ${a.target}, who lived`);
+    }
+  });
   return out;
 }
 

@@ -341,6 +341,8 @@ export interface GameState {
   quietCycles: number;
   /** Deaths since the last discussion began (for the stalemate rule). */
   deathsThisCycle: number;
+  /** What really happened each night, oldest first. Sent to players only in `gameOver`. */
+  nights: NightRecord[];
   result: GameResult | null;
 }
 
@@ -413,6 +415,68 @@ export type NightResult =
   | { kind: 'embalmed'; target: PlayerId; role: RoleId; will: string }
   | { kind: 'vestUsed' }
   | { kind: 'noAction' };
+
+// ---------------------------------------------------------------------------
+// Night history (public only once the game has ended)
+// ---------------------------------------------------------------------------
+
+/**
+ * How one night ability turned out.
+ * - Any ability: `blocked` when a Muse or Lure distracted the actor.
+ * - `kill`, `stab`, `shoot`: `killed`; `survived` (defense, Drifter armor, or a
+ *   heal held); `intercepted` (a Sentinel took the blow). A Patron whose order
+ *   the Hatchet carried out: `ordered`.
+ * - `investigate`: `suspicious` or `clear`. `watch`: `watched`, with `visitors`.
+ * - `heal`: `saved` (the patient was attacked) or `quiet`.
+ * - `guard`: `fought` (an attacker came) or `quiet`.
+ * - `block`: `distracted` (the target lost their action) or `resisted` (another
+ *   distractor, Drifter armor, or a Cutthroat, who attacks its distractor instead).
+ * - `frame`: `framed`. `embalm`: `embalmed` (the target died that night) or `quiet`.
+ * - `vest`: `armored`.
+ */
+export type NightOutcome =
+  | 'blocked'
+  | 'killed'
+  | 'survived'
+  | 'intercepted'
+  | 'ordered'
+  | 'suspicious'
+  | 'clear'
+  | 'watched'
+  | 'saved'
+  | 'fought'
+  | 'quiet'
+  | 'distracted'
+  | 'resisted'
+  | 'framed'
+  | 'embalmed'
+  | 'armored';
+
+export interface NightAction {
+  actor: PlayerId;
+  /** The actor's role that night (roles can change later in the game). */
+  role: RoleId;
+  kind: NightActionKind;
+  /** Where the ability landed. */
+  target: PlayerId;
+  /**
+   * The actor's own pick, when the ability landed elsewhere: a Hatchet carrying
+   * out the Patron's order, or a distracted Cutthroat turning on its distractor.
+   */
+  chose?: PlayerId;
+  outcome: NightOutcome;
+  /** `watch` only: everyone who visited the target, in seat order. */
+  visitors?: PlayerId[];
+}
+
+/** What really happened one night. Public only in `gameOver`. */
+export interface NightRecord {
+  night: number;
+  /** Every ability used that night, in seat order. Players who stayed home are left out. */
+  actions: NightAction[];
+  /** Who died that night, in seat order (the same list as that dawn's `dawn` event). */
+  deaths: PlayerId[];
+}
 
 // ---------------------------------------------------------------------------
 // Events
@@ -495,7 +559,13 @@ export type GameEventBody =
     }
   /** A neutral achieved its goal mid-game (public for the Harlequin, private for the Accuser). */
   | { type: 'neutralWin'; player: PlayerId; role: RoleId }
-  | { type: 'gameOver'; result: GameResult; roles: Record<PlayerId, RoleId> };
+  | {
+      type: 'gameOver';
+      result: GameResult;
+      roles: Record<PlayerId, RoleId>;
+      /** What really happened each night, oldest first, for the curtain call. */
+      nights: NightRecord[];
+    };
 
 export type GameEvent = EventBase & GameEventBody;
 export type GameEventType = GameEventBody['type'];

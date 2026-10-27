@@ -70,6 +70,25 @@ const lastWords = judge(putOnTrial(dawn3, 'p9', ['p0', 'p1', 'p3', 'p4']), {
   p4: 'guilty',
 });
 const executed = until(lastWords, 'execution');
+// Night 3: the Patron, now the killer, is stopped by the Mender.
+const dawn4 = step(night(executed, { p7: 'p4', p1: 'p4' }));
+// Day 4: the Patron is executed and the Town wins.
+const finalWords = judge(putOnTrial(dawn4, 'p7', ['p0', 'p1', 'p3', 'p4']), {
+  p0: 'guilty',
+  p1: 'guilty',
+  p3: 'guilty',
+  p4: 'guilty',
+});
+const finalExecution = until(finalWords, 'execution');
+const ended = until(finalExecution, 'ended');
+
+/** True when `x` holds a night record or one of its actions anywhere inside. */
+const holdsHistory = (x: unknown): boolean => {
+  if (Array.isArray(x)) return x.some(holdsHistory);
+  if (!x || typeof x !== 'object') return false;
+  if ('nights' in x || ('actor' in x && 'outcome' in x)) return true;
+  return Object.values(x).some(holdsHistory);
+};
 
 describe('staging cues', () => {
   it('role deal: each player gets only their own role; the Syndicate also gets teammates', () => {
@@ -217,5 +236,53 @@ describe('staging cues', () => {
         role: 'embalmer',
       });
     }
+  });
+
+  it('night history: no view holds it before the game ends', () => {
+    const before = [d, midJudgment, day1, night1, dawn2, n2, dawn3, lastWords, executed, dawn4];
+    for (const cp of [...before, finalWords, finalExecution]) {
+      expect(cp.state.phase.kind).not.toBe('ended');
+      for (const id of IDS) expect(holdsHistory(viewFor(cp.state, id)), id).toBe(false);
+    }
+    // The host has been keeping it all along.
+    expect(finalExecution.state.nights).toHaveLength(3);
+  });
+
+  it('night history: everyone gets the whole record in gameOver', () => {
+    for (const id of IDS) {
+      const over = ofType(seen(ended, id), 'gameOver');
+      expect(over).toHaveLength(1);
+      expect(over[0]).toMatchObject({ audience: 'all', result: { outcome: 'town' } });
+      expect(over[0]?.nights).toEqual(ended.state.nights);
+      expect(holdsHistory(viewFor(ended.state, id))).toBe(true);
+    }
+    const nights = ended.state.nights;
+    expect(nights.map((n) => [n.night, n.deaths])).toEqual([
+      [1, ['p2', 'p10']],
+      [2, ['p6', 'p8']],
+      [3, []],
+    ]);
+    const story = nights.map((n) =>
+      n.actions.map((a) => [a.actor, a.kind, a.target, a.outcome, a.chose ?? null]),
+    );
+    expect(story).toEqual([
+      [
+        ['p1', 'heal', 'p3', 'saved', null],
+        ['p2', 'guard', 'p4', 'fought', null],
+        ['p7', 'kill', 'p3', 'ordered', null],
+        ['p8', 'kill', 'p3', 'survived', 'p4'],
+        ['p9', 'embalm', 'p10', 'embalmed', null],
+        ['p10', 'stab', 'p4', 'intercepted', null],
+      ],
+      [
+        ['p5', 'shoot', 'p8', 'killed', null],
+        ['p7', 'kill', 'p6', 'ordered', null],
+        ['p8', 'kill', 'p6', 'killed', null],
+      ],
+      [
+        ['p1', 'heal', 'p4', 'saved', null],
+        ['p7', 'kill', 'p4', 'survived', null],
+      ],
+    ]);
   });
 });
