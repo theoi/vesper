@@ -291,8 +291,7 @@ describe('rematch', () => {
       await vi.advanceTimersByTimeAsync(5000);
     }
     expect(c.getState().session?.status).toBe('ended');
-    // Calls already waiting for a slot can run one or two past the cap.
-    expect(c.getState().claude.callsThisGame).toBeGreaterThanOrEqual(4);
+    expect(c.getState().claude.callsThisGame).toBe(4);
     expect(c.getState().claude.status.state).toBe('degraded');
     expect(c.botTranscript().some((l) => l.reason === 'budget')).toBe(true);
 
