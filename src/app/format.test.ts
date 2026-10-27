@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { runGame } from '../../scripts/simcore.ts';
+import {
+  DEATH_CAUSE,
+  NIGHT_VERB,
+  OUTCOME_HEADLINE,
+  RESULT_REASON,
+  SAVED_BY,
+} from '../content/index.ts';
 import { pinnedGame } from '../engine/testkit.ts';
-import type { EventBase, GameEvent, GameEventBody } from '../engine/types.ts';
+import type { EventBase, GameEvent, GameEventBody, GameResult } from '../engine/types.ts';
 import { viewFor } from '../engine/view.ts';
 import { describeEvent } from './format.ts';
 
@@ -22,7 +30,51 @@ const death = (causes: Extract<GameEventBody, { type: 'death' }>['causes'], emba
     embalmed,
   });
 
+const over = (outcome: GameResult['outcome'], reason: GameResult['reason']) =>
+  line({
+    type: 'gameOver',
+    result: { outcome, reason, winners: [], day: 4 },
+    roles: {},
+    nights: [],
+  });
+const keys = <K extends string>(record: Record<K, string>) => Object.keys(record) as K[];
+
 describe('feed lines', () => {
+  it('say what a Syndicate member wants to do tonight', () => {
+    const pick = (kind: 'kill' | 'frame', targets: string[] | null) =>
+      line({ type: 'mafiaPick', player: 'p5', kind, targets });
+    expect(pick('kill', ['p0'])).toBe('Fay wants to kill Ada.');
+    expect(pick('frame', ['p0'])).toBe('Fay wants to mark Ada.');
+    expect(pick('kill', null)).toBe('Fay cancels their pick.');
+  });
+
+  it('never show a raw action kind, death cause, or result id in parentheses', () => {
+    const RAW = /\([a-z][A-Za-z]*\)/;
+    const lines: (string | null)[] = [
+      ...keys(NIGHT_VERB).map((kind) =>
+        line({ type: 'mafiaPick', player: 'p5', kind, targets: ['p0'] }),
+      ),
+      ...keys(DEATH_CAUSE).map((cause) => death([cause])),
+      ...keys(SAVED_BY).map((savedBy) =>
+        line({
+          type: 'nightResult',
+          player: 'p1',
+          night: 1,
+          result: { kind: 'attackedSurvived', savedBy },
+        }),
+      ),
+      ...keys(OUTCOME_HEADLINE).flatMap((o) => keys(RESULT_REASON).map((r) => over(o, r))),
+    ];
+    // Every engine event of a few real games (chat is the players' own words).
+    for (const seed of [1, 2, 3]) {
+      const state = runGame({ seed, players: 12, keepState: true }).state!;
+      const host = viewFor(state, state.players[0]!.id);
+      for (const e of state.log) if (e.type !== 'chat') lines.push(describeEvent(host, e));
+    }
+    expect(lines.filter((l) => l?.includes('wants to')).length).toBeGreaterThan(10);
+    for (const l of lines) expect(l ?? '', l ?? '').not.toMatch(RAW);
+  });
+
   it('say how someone died in plain words', () => {
     expect(death(['mafia'])).toBe('Ada was killed by the Syndicate. They were the Mender.');
     expect(death(['mafia', 'reckoner'])).toBe(
@@ -33,13 +85,6 @@ describe('feed lines', () => {
   });
 
   it('end the game with the playbill sentence', () => {
-    const over = (outcome: 'town' | 'mafia', reason: 'threatsEliminated' | 'mafiaParity') =>
-      line({
-        type: 'gameOver',
-        result: { outcome, reason, winners: [], day: 4 },
-        roles: {},
-        nights: [],
-      });
     expect(over('town', 'threatsEliminated')).toBe(
       'Game over. The Town prevails: every threat to the town is gone.',
     );

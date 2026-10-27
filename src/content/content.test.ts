@@ -5,6 +5,7 @@ import {
   GLOSSARY,
   HOW_TO_PLAY,
   NIGHT_OUTCOME,
+  NIGHT_VERB,
   OUTCOME_HEADLINE,
   PHASE_HELP,
   RESULT_REASON,
@@ -21,6 +22,7 @@ const labels = (): string[] => [
   ...Object.values(RESULT_REASON),
   ...Object.values(SAVED_BY),
   ...Object.values(NIGHT_OUTCOME),
+  ...Object.values(NIGHT_VERB),
 ];
 
 const allText = (): string[] => [
