@@ -1,0 +1,53 @@
+name: Set up Playwright Chromium
+description: >-
+  Restore cached Playwright browsers, download Chromium only when it is
+  missing, and install system packages only if Chromium can't start without
+  them. Network steps time out and retry, because apt mirrors and the browser
+  CDN sometimes hang.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the Playwright version
+      id: version
+      shell: bash
+      run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Playwright browsers
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    # A no-op when the cache already has this version's Chromium.
+    - name: Download Chromium
+      shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          timeout 180 npx playwright install chromium && exit 0
+          echo "::warning::Chromium download attempt $attempt failed"
+          sleep $((attempt * 10))
+        done
+        exit 1
+
+    # GitHub's Ubuntu images already carry Chromium's libraries; skip apt unless one is missing.
+    - name: Check that Chromium starts
+      id: launch
+      shell: bash
+      run: |
+        if node -e "require('@playwright/test').chromium.launch().then((b) => b.close())"; then
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install missing system packages
+      if: steps.launch.outputs.ok != 'true'
+      shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          timeout 300 npx playwright install-deps chromium && exit 0
+          echo "::warning::System package install attempt $attempt failed"
+          sleep $((attempt * 15))
+        done
+        exit 1

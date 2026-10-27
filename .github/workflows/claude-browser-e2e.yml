@@ -41,7 +41,8 @@ jobs:
           cache: npm
       # Install before the key is in any environment, so no install script can read it.
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-playwright
+        timeout-minutes: 12
       - name: Play with Claude bots on the live site
         env:
           # A key from an org without custom data retention, if provided, can call Anthropic from a browser.

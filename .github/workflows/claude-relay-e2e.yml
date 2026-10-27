@@ -56,8 +56,8 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: relay
-      - run: npx playwright install --with-deps chromium
-        timeout-minutes: 6
+      - uses: ./.github/actions/setup-playwright
+        timeout-minutes: 12
 
       - name: Pick the relay
         id: pick
@@ -103,7 +103,7 @@ jobs:
           chmod +x cloudflared
           nohup ./cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8787 > tunnel.log 2>&1 &
           URL=
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' tunnel.log | head -1)
             if [ -n "$URL" ] && curl -fs "$URL/" > /dev/null; then break; fi
             URL=
