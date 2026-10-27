@@ -8,7 +8,7 @@ import { maskSVG } from './masque/masks.ts';
 import './index.css';
 
 // Directions that are merged and live; the others show as "in rehearsal".
-const LIVE = new Set(['masque']);
+const LIVE = new Set(['masque', 'agitprop', 'deadair']);
 
 const mask = document.querySelector('.mq-mask');
 if (mask) mask.innerHTML = maskSVG({ variant: 0, eyesClosed: true });
