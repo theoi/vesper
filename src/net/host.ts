@@ -36,6 +36,7 @@ import {
   type RejectReason,
 } from './protocol.ts';
 import { randomCode } from './room.ts';
+import { backgroundTimers, type TimerApi } from './timers.ts';
 import {
   Store,
   ViewChannel,
@@ -91,6 +92,8 @@ export interface HostOptions {
   rewriteSpeech?: SpeechRewriter;
   /** Return false to skip the rewriter and apply scripted lines at once (e.g. no key). */
   shouldRewrite?: () => boolean;
+  /** Timer source for the game loop. Defaults to worker timers that keep running in hidden tabs. */
+  timers?: TimerApi;
   /** Called when a game starts (e.g. to reset a per-game Claude budget). */
   onGameStart?: () => void;
   /** Called for every message sent to a client (tests and debugging). */
@@ -158,12 +161,14 @@ export class HostSession implements GameSession {
   private peers = new Map<string, Peer>();
   private peerOf = new Map<PlayerId, string>();
   private buckets = new Map<PlayerId, Bucket>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private sweeper: ReturnType<typeof setInterval> | null = null;
+  private readonly timers: TimerApi;
+  private timer: number | null = null;
+  private sweeper: number | null = null;
   private closed = false;
 
   constructor(opts: HostOptions) {
     this.opts = opts;
+    this.timers = opts.timers ?? backgroundTimers();
     this._code = opts.code ?? randomCode();
     this.hostId = `p-${randomId(4)}`;
     this.seats = [
@@ -220,7 +225,7 @@ export class HostSession implements GameSession {
         return this.setNetwork({ state: 'offline' });
       }
       this.attach(t);
-      this.sweeper = setInterval(() => this.sweep(), SWEEP_MS);
+      this.scheduleSweep();
       return this.setNetwork({ state: 'open' });
     }
     return this.setNetwork({ state: 'error', error: lastError });
@@ -234,7 +239,7 @@ export class HostSession implements GameSession {
       this.sendTo(peer, { t: 'closed', reason: 'hostLeft', message: HOST_LEFT });
     }
     this.clearTimer();
-    if (this.sweeper) clearInterval(this.sweeper);
+    if (this.sweeper !== null) this.timers.clearTimeout(this.sweeper);
     // Give the goodbye messages a moment to flush before tearing down.
     const t = this.transport;
     this.transport = null;
@@ -531,11 +536,11 @@ export class HostSession implements GameSession {
     if (this.botsDirty) times.push(now + BOT_REACT_MS);
     if (times.length === 0) return;
     const at = Math.min(...times);
-    this.timer = setTimeout(() => this.loop(), Math.max(0, at - now));
+    this.timer = this.timers.setTimeout(() => this.loop(), Math.max(0, at - now));
   }
 
   private clearTimer(): void {
-    if (this.timer) clearTimeout(this.timer);
+    if (this.timer !== null) this.timers.clearTimeout(this.timer);
     this.timer = null;
   }
 
@@ -668,6 +673,14 @@ export class HostSession implements GameSession {
     const seat = this.seats.find((s) => s.id === peer.playerId);
     if (seat) seat.connected = false;
     this.lobbyChanged();
+  }
+
+  private scheduleSweep(): void {
+    this.sweeper = this.timers.setTimeout(() => {
+      if (this.closed) return;
+      this.sweep();
+      this.scheduleSweep();
+    }, SWEEP_MS);
   }
 
   private sweep(): void {
