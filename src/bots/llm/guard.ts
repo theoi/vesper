@@ -58,12 +58,17 @@ function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Whether `text` mentions `name`, allowing the bots' nickname and a short form. */
-export function mentionsName(text: string, name: string): boolean {
+/** Regex source matching a name, the bots' nickname for it, or a short form. */
+function nameForms(name: string): string {
   const forms = new Set([escape(name)]);
   if (name.length > 4) forms.add(escape(nickname(name)));
   if (name.length >= 6) forms.add(`${escape(name.slice(0, 4))}\\p{L}{0,${name.length - 4}}`);
-  const re = new RegExp(`(^|[^\\p{L}])(?:${[...forms].join('|')})(?:'s|’s)?($|[^\\p{L}])`, 'iu');
+  return `(?:${[...forms].join('|')})`;
+}
+
+/** Whether `text` mentions `name`, allowing the bots' nickname and a short form. */
+export function mentionsName(text: string, name: string): boolean {
+  const re = new RegExp(`(^|[^\\p{L}])${nameForms(name)}(?:'s|’s)?($|[^\\p{L}])`, 'iu');
   return re.test(text);
 }
 
@@ -73,10 +78,10 @@ function mentioned(text: string, view: PlayerView): Set<PlayerId> {
 
 /** True when `name` is only being addressed ("Bea, ..." or "..., Bea?"), not talked about. */
 function vocative(sentence: string, name: string): boolean {
-  const n = escape(name);
-  const lead = new RegExp(String.raw`^\W*${n}\s*[,:]`, 'i');
-  const tail = new RegExp(String.raw`,\s*${n}\W*$`, 'i');
-  const aside = new RegExp(String.raw`,\s*${n}\s*,`, 'i');
+  const n = nameForms(name);
+  const lead = new RegExp(String.raw`^[^\p{L}]*${n}\s*[,:]`, 'iu');
+  const tail = new RegExp(String.raw`,\s*${n}[^\p{L}]*$`, 'iu');
+  const aside = new RegExp(String.raw`,\s*${n}\s*,`, 'iu');
   return lead.test(sentence) || tail.test(sentence) || aside.test(sentence);
 }
 

@@ -78,7 +78,7 @@ export interface ChatLimits {
 
 export const DEFAULT_LIMITS: ChatLimits = {
   timeoutMs: 4000,
-  maxCallsPerGame: 220,
+  maxCallsPerGame: 300,
   maxConcurrent: 3,
   maxCallsPerMinute: 45,
   maxChars: 160,
