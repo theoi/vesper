@@ -1,4 +1,4 @@
-import type { Intent, PlayerId, RoleId, SpeechAct } from '../engine/types.ts';
+import type { ClaimedResult, Intent, PlayerId, RoleId, SpeechAct } from '../engine/types.ts';
 
 export type Temperament =
   'calm' | 'fiery' | 'anxious' | 'cheerful' | 'cold' | 'theatrical' | 'wry' | 'earnest';
@@ -9,9 +9,9 @@ export type Quirk =
   | 'exclaims' // lots of exclamation marks
   | 'nicknames' // shortens names
   | 'catchphrase' // repeats a signature phrase
-  | 'questions' // answers with questions
-  | 'formal' // stiff, complete sentences
-  | 'terse'; // drops words
+  | 'questions' // tags statements with questions
+  | 'formal' // no contractions
+  | 'terse'; // drops filler words
 
 export interface Personality {
   id: string;
@@ -37,25 +37,121 @@ export interface BotSpeech {
   act: SpeechAct;
   /** Personality id of the speaker (for an LLM layer to keep the voice). */
   personality: string;
+  /** Template category the scripted text came from (useful context for an LLM). */
+  category: string;
 }
+
+export type ReasonKey =
+  | 'readSuspicious'
+  | 'votedTown'
+  | 'wagonStarter'
+  | 'defendedMafia'
+  | 'innocentOnMafia'
+  | 'fakeClaim'
+  | 'counterClaim'
+  | 'lyingAboutMe'
+  | 'quiet'
+  | 'visitedVictim'
+  | 'accusedByDead'
+  | 'claimedSuspicious'
+  | 'accusedMe'
+  | 'gut';
+
+export interface Reason {
+  k: ReasonKey;
+  x?: PlayerId;
+  day: number;
+}
+
+/** Something a bot intends to say; turned into a line when its turn comes. */
+export type Topic =
+  | { t: 'greet' }
+  | { t: 'death'; player: PlayerId; role: RoleId | null; power: boolean }
+  | { t: 'deathNote'; player: PlayerId; note: string }
+  | { t: 'will'; player: PlayerId; summary: string }
+  | { t: 'quietNight' }
+  | { t: 'exec'; player: PlayerId; role: RoleId }
+  | { t: 'claim'; role: RoleId; results?: ClaimedResult[] }
+  | { t: 'accuse'; target: PlayerId; hard: boolean }
+  | { t: 'defendSelf'; accuser: PlayerId }
+  | { t: 'defendOther'; target: PlayerId }
+  | { t: 'question'; target?: PlayerId }
+  | { t: 'doubt'; target: PlayerId; role: RoleId }
+  | { t: 'believe'; target: PlayerId; role: RoleId }
+  | { t: 'vote'; target: PlayerId }
+  | { t: 'urge'; target: PlayerId }
+  | { t: 'plea' }
+  | { t: 'judge'; target: PlayerId; guilty: boolean }
+  | { t: 'lastWords' }
+  | { t: 'trialReact'; target: PlayerId }
+  | { t: 'banter' }
+  | { t: 'mafiaPlan'; target: PlayerId; why: string }
+  | { t: 'mafiaAgree'; target: PlayerId }
+  | { t: 'mafiaCover'; role: RoleId }
+  | { t: 'mafiaBanter' }
+  | { t: 'deadIntro' }
+  | { t: 'deadTip'; target: PlayerId; finding: string }
+  | { t: 'deadBanter' }
+  | { t: 'mournerAsk' }
+  | { t: 'mournerRelay'; target: PlayerId; finding: string }
+  | { t: 'magistrate' }
+  | { t: 'magistrateReact'; target: PlayerId }
+  | { t: 'bait' }
+  | { t: 'reply'; to: PlayerId }
+  | { t: 'whisperClaim'; to: PlayerId; role: RoleId }
+  | { t: 'end'; outcome: 'win' | 'lose' | 'draw' };
 
 /** Internal bot memory; JSON only. Other modules should treat it as opaque. */
 export interface BotMemory {
   role: RoleId | null;
+  teammates: PlayerId[];
   /** Suspicion per player: positive = likely hostile, negative = likely town. */
   suspicion: Record<PlayerId, number>;
-  /** Players this bot has hard knowledge about (own results, teammates, reveals). */
-  known: Record<PlayerId, 'town' | 'hostile' | 'mafia'>;
+  reasons: Record<PlayerId, Reason[]>;
+  /** Hard knowledge from own results, reveals, and contradictions. */
+  known: Record<PlayerId, 'town' | 'hostile'>;
   /** Public role claims seen: player → claimed role. */
   claims: Record<PlayerId, RoleId>;
+  claimDay: Record<PlayerId, number>;
+  claimResults: Record<PlayerId, ClaimedResult[]>;
   /** Our own public claim, once made. */
   claimed: RoleId | null;
-  /** Per-phase bookkeeping, reset on phase change. */
+  /** The role we will claim if pressed (our real one for Town). */
+  cover: RoleId | null;
+  /** Fabricated results backing a fake investigative claim. */
+  fakeResults: ClaimedResult[];
+  checked: PlayerId[];
+  /** Public lines per player today. */
+  msgs: Record<PlayerId, number>;
+  accusedBy: Record<PlayerId, PlayerId[]>;
+  defendedBy: Record<PlayerId, PlayerId[]>;
+  /** Voters who put each defendant on trial (latest trial). */
+  wagons: Record<PlayerId, PlayerId[]>;
+  ballots: Record<PlayerId, { guilty: PlayerId[]; innocent: PlayerId[] }>;
+  /** Live nomination votes today: voter → target, in vote order. */
+  dayVotes: Record<PlayerId, PlayerId>;
+  /** Dead tips heard as the Mourner. */
+  deadTips: { target: PlayerId; finding: string }[];
+  /** Teammates' night picks (Syndicate). */
+  mafiaPicks: Record<PlayerId, PlayerId>;
   phaseKey: string;
-  saidThisPhase: number;
-  actedThisPhase: boolean;
+  phaseStart: number;
+  said: number;
+  nextChatAt: number;
+  actAt: number;
+  acted: boolean;
+  readyAt: number;
+  queue: Topic[];
+  /** Reactions saved for the next time public chat opens. */
+  pending: Topic[];
+  /** Topic keys already covered, to avoid repeating ourselves. */
   topics: string[];
-  /** Free-form counters and flags. */
+  /** Recently used template ids. */
+  recent: string[];
+  /** Recently heard public lines (normalized), to avoid echoing others. */
+  heard: string[];
+  /** Pressure on us today (accusations, votes). */
+  heat: number;
   flags: Record<string, number>;
 }
 

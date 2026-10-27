@@ -79,6 +79,22 @@ export function pinnedGame(
       accuserTarget: role === 'accuser' ? (accuserTarget ?? `p${firstTown}`) : null,
     };
   });
+  // Keep the private role events consistent with the pinned seats.
+  const mafia = state.players.filter((p) => ROLES[p.role].faction === 'mafia');
+  state.log = state.log.map((e) => {
+    if (e.type !== 'roleAssigned') return e;
+    const p = state.players.find((x) => x.id === e.player);
+    if (!p) return e;
+    const { teammates: _t, accuserTarget: _a, ...rest } = e;
+    return {
+      ...rest,
+      role: p.role,
+      ...(ROLES[p.role].faction === 'mafia'
+        ? { teammates: mafia.filter((m) => m.id !== p.id).map((m) => ({ id: m.id, role: m.role })) }
+        : {}),
+      ...(p.accuserTarget ? { accuserTarget: p.accuserTarget } : {}),
+    };
+  });
   return state;
 }
 

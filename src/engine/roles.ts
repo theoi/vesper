@@ -263,9 +263,9 @@ export const ROLES: Record<RoleId, RoleDef> = {
     win: 'cutthroat',
     flavor: 'The streets go very quiet when it is out.',
     summary:
-      'Kill one player each night. You survive basic attacks. Anyone who tries to distract you becomes your victim instead.',
+      'Kill one player each night; your blade cuts through night defense and armor (only a Mender or Sentinel can stop it). You survive basic attacks, and anyone who tries to distract you becomes your victim instead.',
     goal: 'Be the last killer standing.',
-    night: { kind: 'stab', target: 'other', visits: true },
+    night: { kind: 'stab', target: 'other', visits: true, power: 2 },
     defense: 1,
     appearsSuspicious: true,
     unique: true,

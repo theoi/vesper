@@ -114,6 +114,8 @@ export interface NightAbility {
   firstNight?: number;
   /** Whether using it counts as a visit (seen by the Lamplighter). */
   visits: boolean;
+  /** Attack power for killing abilities: 1 basic (default), 2 pierces defense and armor. */
+  power?: 1 | 2;
 }
 
 export interface RoleDef {

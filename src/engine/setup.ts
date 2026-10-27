@@ -53,14 +53,18 @@ export const DEFAULT_OPTIONS: GameOptions = {
   maxDays: 25,
 };
 
-/** Hand-tuned setups. Each is balanced by simulation; see the sim report. */
+/**
+ * Hand-tuned setups. Each was balanced with `npm run sim` so the Town wins
+ * roughly 45–55% of bot-only games; see the sim report for current numbers.
+ */
 export const PRESETS: Preset[] = [
   {
     id: 'vesper-7',
     name: 'Seven Candles',
     players: 7,
-    roles: ['augur', 'mender', 'muse', 'resident', 'patron', 'hatchet', 'harlequin'],
-    description: 'A tight table: one reader, one healer, and a Syndicate pair.',
+    roles: ['augur', 'lamplighter', 'mender', 'resident', 'resident', 'hatchet', 'slanderer'],
+    description:
+      'A tight table: a reader, a watcher, and a healer against a Hatchet and a Slanderer.',
   },
   {
     id: 'vesper-8',
@@ -72,11 +76,11 @@ export const PRESETS: Preset[] = [
       'mender',
       'resident',
       'resident',
+      'drifter',
       'patron',
       'hatchet',
-      'accuser',
     ],
-    description: 'Two investigators against a pair, with an Accuser stirring the pot.',
+    description: 'The Patron reads Clear. A Drifter just wants to see dawn.',
   },
   {
     id: 'vesper-9',
@@ -88,12 +92,12 @@ export const PRESETS: Preset[] = [
       'mender',
       'reckoner',
       'resident',
+      'resident',
       'patron',
       'hatchet',
-      'lure',
       'harlequin',
     ],
-    description: 'A Reckoner joins the town; the Syndicate brings a Lure.',
+    description: 'A Reckoner joins the town, and a Harlequin begs for the noose.',
   },
   {
     id: 'vesper-10',
@@ -144,9 +148,9 @@ export const PRESETS: Preset[] = [
       'reckoner',
       'muse',
       'mourner',
+      'resident',
       'patron',
       'hatchet',
-      'slanderer',
       'harlequin',
       'cutthroat',
     ],
@@ -165,13 +169,13 @@ export const PRESETS: Preset[] = [
       'muse',
       'magistrate',
       'resident',
+      'resident',
       'patron',
       'hatchet',
-      'lure',
       'slanderer',
       'cutthroat',
     ],
-    description: 'Three Syndicate, a Cutthroat, and a full town bench.',
+    description: 'A full town bench against three Syndicate and a Cutthroat.',
   },
   {
     id: 'vesper-14',
@@ -187,11 +191,11 @@ export const PRESETS: Preset[] = [
       'magistrate',
       'mourner',
       'resident',
+      'resident',
       'patron',
       'hatchet',
-      'lure',
       'embalmer',
-      'accuser',
+      'cutthroat',
     ],
     description: 'Bodies go missing: the Embalmer hides what the dead were.',
   },
@@ -219,7 +223,6 @@ export const PRESETS: Preset[] = [
     description: 'The full night: every archetype at one table.',
   },
 ];
-
 /** Built-in setup for a player count. Sizes outside 7–15 get a scaled fallback. */
 export function presetFor(playerCount: number): Preset {
   const exact = PRESETS.find((p) => p.players === playerCount);
