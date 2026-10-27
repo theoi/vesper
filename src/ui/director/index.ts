@@ -1,4 +1,4 @@
-import { ROLES, type PlayerId, type PlayerView } from '../../engine/index.ts';
+import { ROLES, type NightRecord, type PlayerId, type PlayerView } from '../../engine/index.ts';
 import type { AudioScene, DirectorApi, GameAudio } from '../contracts.ts';
 import type { Stage } from '../stage/index.ts';
 import { newMemo, plan, SKIPPABLE, type Beat, type Memo, type SeqSpec } from './plan.ts';
@@ -239,6 +239,20 @@ class Director implements DirectorApi {
 
   skip(): void {
     this.take?.skip();
+  }
+
+  replay(nights: NightRecord[]): void {
+    const result = this.view?.result;
+    if (!result || !nights.length || this.disposed) return;
+    this.queue = [];
+    this.take?.skip();
+    this.queue.push({
+      id: 'replay',
+      nights,
+      outcome: result.outcome,
+      won: result.winners.includes(this.view?.you.id ?? ''),
+    });
+    this.pump();
   }
 
   // --- night life: strangers cross the cloth now and then (never tied to real actions) --

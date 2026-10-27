@@ -383,6 +383,61 @@ const SCENES: Scene[] = [
       viewAt('ended', { result: { outcome: 'draw', winners: [], reason: 'stalemate', day: 7 } }),
     spec: { id: 'finale', outcome: 'draw', won: false },
   },
+  {
+    group: 'Curtain call',
+    label: 'What really happened',
+    view: () =>
+      viewAt('ended', {
+        dead: ['p3', 'p6', 'p7'],
+        result: {
+          outcome: 'town',
+          winners: ['p0', 'p1', 'p2', 'p4', 'p5', 'p8'],
+          reason: 'threatsEliminated',
+          day: 3,
+        },
+      }),
+    spec: {
+      id: 'replay',
+      outcome: 'town',
+      won: true,
+      nights: [
+        {
+          night: 1,
+          deaths: [],
+          actions: [
+            {
+              actor: 'p1',
+              role: 'augur',
+              kind: 'investigate',
+              target: 'p3',
+              outcome: 'suspicious',
+            },
+            { actor: 'p2', role: 'mender', kind: 'heal', target: 'p4', outcome: 'saved' },
+            { actor: 'p3', role: 'patron', kind: 'kill', target: 'p4', outcome: 'ordered' },
+            { actor: 'p6', role: 'hatchet', kind: 'kill', target: 'p4', outcome: 'survived' },
+            {
+              actor: 'p7',
+              role: 'lamplighter',
+              kind: 'watch',
+              target: 'p4',
+              outcome: 'watched',
+              visitors: ['p2', 'p6'],
+            },
+          ],
+        },
+        {
+          night: 2,
+          deaths: ['p3', 'p7'],
+          actions: [
+            { actor: 'p1', role: 'augur', kind: 'investigate', target: 'p6', outcome: 'blocked' },
+            { actor: 'p5', role: 'muse', kind: 'block', target: 'p1', outcome: 'distracted' },
+            { actor: 'p6', role: 'hatchet', kind: 'kill', target: 'p7', outcome: 'killed' },
+            { actor: 'p8', role: 'reckoner', kind: 'shoot', target: 'p3', outcome: 'killed' },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 let take: Take | null = null;

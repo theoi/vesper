@@ -1,7 +1,8 @@
 /** The sequence library: short staged scenes, each skippable, never blocking play. */
-import { ROLES, type PlayerId } from '../../engine/index.ts';
+import { ROLES, type NightAction, type PlayerId } from '../../engine/index.ts';
 import type { CueName, GameAudio } from '../contracts.ts';
-import type { Shade, Stage } from '../stage/index.ts';
+import { NIGHT_ACT, NIGHT_GAP, type Shade, type Stage } from '../stage/index.ts';
+import { deathsLine, describeAction } from './history.ts';
 import type { DeathInfo, Note, SeqSpec } from './plan.ts';
 
 /** Thrown into a running sequence when it is skipped. */
@@ -693,6 +694,136 @@ async function finale({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'finale' }>): 
   }
 }
 
+// --- the curtain call: what really happened -----------------------------------------
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+const KILL_CUE: Partial<Record<NightAction['kind'], CueName>> = {
+  kill: 'deathMafia',
+  stab: 'deathCutthroat',
+  shoot: 'deathReckoner',
+};
+
+/** One ability, staged: the actor crosses to the target's mark and the outcome plays out. */
+async function visit({ t, s, a }: Ctx, x: NightAction, kicker: string): Promise<void> {
+  const actor = s.shadeOf(x.actor);
+  if (!actor) return;
+  const self = x.actor === x.target;
+  const target = self ? undefined : s.shadeOf(x.target);
+  const ax = s.markOf(x.actor);
+  const tx = s.markOf(x.target);
+  for (const p of s.view?.players ?? []) {
+    if (p.id !== x.actor && p.id !== x.target) s.shadeOf(p.id)?.go({ dim: 0 }, 250);
+  }
+  s.plate(
+    describeAction(x, (id) => s.nameOf(id)),
+    kicker,
+    3000,
+  );
+  s.cloth.to({ hx: clamp(tx / 100, 0.15, 0.85), hy: 0.6, hr: 0.36, lamp: 0.58 }, 600);
+  actor.go({ x: ax, z: 0, dim: 0 }, 0);
+  actor.act('idle', 0);
+  actor.face(tx >= ax ? 1 : -1);
+  actor.go({ dim: 1 }, 300);
+  if (target) {
+    target.go({ x: tx, z: 0, dim: 0 }, 0);
+    target.act('sit', 0);
+    target.face(ax >= tx ? 1 : -1);
+    target.go({ dim: 0.5 }, 300);
+  }
+  if (self || x.outcome === 'ordered') {
+    // A Patron gives the order from home; armor goes on at home.
+    actor.act(self ? NIGHT_ACT[x.kind] : 'accuse', 300);
+    a.cue('whisper', { pan: s.pan(x.actor), gain: 0.5 });
+    await t.wait(1300);
+    return;
+  }
+  const blocked = x.outcome === 'blocked';
+  const side = ax < tx ? -1 : 1;
+  const stop = blocked ? ax + (tx - ax) * 0.4 : clamp(tx + side * (NIGHT_GAP[x.kind] ?? 6), 4, 96);
+  const sneak = x.kind === 'kill' || x.kind === 'stab' || x.kind === 'frame' || x.kind === 'embalm';
+  const ms = actor.walkTo(stop, {
+    speed: Math.max(40, Math.abs(stop - ax) / 0.7),
+    act: sneak ? 'creep' : 'walk',
+  });
+  await t.wait(Math.max(300, ms));
+  actor.walk(false);
+  actor.face(tx >= stop ? 1 : -1);
+  actor.act(blocked ? 'recoil' : NIGHT_ACT[x.kind], 200);
+  const pan = s.pan(x.target);
+  if (blocked) a.cue('unknock', { pan });
+  else if (x.outcome === 'killed') {
+    const cue = KILL_CUE[x.kind];
+    if (cue) a.cue(cue, { pan, gain: 0.6 });
+    if (x.kind === 'shoot') s.cloth.flash(0.35, 400);
+    s.candle(x.target, 'out');
+    target?.act('fall', 160);
+    t.later(450, () => target?.act('lie', 200));
+  } else if (x.outcome === 'survived' || x.outcome === 'intercepted') {
+    target?.act('recoil', 200);
+    a.cue('knock', { pan, gain: 0.6 });
+  } else if (x.outcome === 'saved' || x.outcome === 'fought') {
+    s.candle(x.target, 'flare');
+    a.cue('claim', { pan, gain: 0.5 });
+  } else a.cue('whisper', { pan, gain: 0.5 });
+  await t.wait(900);
+  actor.go({ dim: 0 }, 300);
+  target?.go({ dim: 0 }, 300);
+}
+
+async function replay(c: Ctx, q: Extract<SeqSpec, { id: 'replay' }>): Promise<void> {
+  const { t, s, a } = c;
+  const view = s.view;
+  if (!view) return;
+  const hideAll = (ms: number) => {
+    for (const p of view.players) s.shadeOf(p.id)?.go({ dim: 0 }, ms);
+  };
+  a.setScene('night');
+  try {
+    s.film.card({
+      kicker: 'The curtain call',
+      title: 'What really happened',
+      body: 'Every night, replayed in shadow. Click or press Esc to stop.',
+    });
+    a.cue('cut');
+    hideAll(300);
+    await t.wait(1800);
+    s.film.clear();
+    for (const n of q.nights) {
+      // Candles burn as they did that night: out only for those already gone.
+      for (const p of view.players) {
+        const gone = view.graveyard.some(
+          (g) => g.id === p.id && (g.day < n.night || (g.day === n.night && g.time === 'day')),
+        );
+        s.setLit(p.id, !gone);
+      }
+      s.cloth.look('night', 700, { fog: 0.15 });
+      s.plate(
+        n.actions.length ? 'The lamps go out.' : 'Everyone stayed home.',
+        `Night ${n.night}`,
+        1500,
+      );
+      a.cue('creep', { gain: 0.6 });
+      await t.wait(1000);
+      for (const [i, x] of n.actions.entries()) {
+        await visit(c, x, `Night ${n.night} · ${i + 1} of ${n.actions.length}`);
+      }
+      hideAll(300);
+      s.cloth.to({ hx: 0.5, hr: 0.5 }, 600);
+      s.plate(
+        deathsLine(n, (id) => s.nameOf(id)),
+        `Night ${n.night}`,
+        2000,
+      );
+      if (n.deaths.length) a.cue('candleOut', { gain: 0.7 });
+      await t.wait(1600);
+    }
+  } finally {
+    s.repaint();
+    a.setScene('end', { end: q.outcome, won: q.won });
+  }
+}
+
 type Run = (c: Ctx, q: never) => Promise<void>;
 
 export const SEQUENCES: Record<SeqSpec['id'], Run> = {
@@ -707,6 +838,7 @@ export const SEQUENCES: Record<SeqSpec['id'], Run> = {
   death,
   notes,
   finale,
+  replay,
 };
 
 export function runSequence(t: Take, s: Stage, a: GameAudio, q: SeqSpec): Promise<void> {

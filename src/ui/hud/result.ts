@@ -1,7 +1,14 @@
 import { nameOf, roleName } from '../../app/format.ts';
-import { FACTIONS, ROLES, type GameResult, type PlayerView } from '../../engine/index.ts';
+import {
+  FACTIONS,
+  ROLES,
+  type GameResult,
+  type NightRecord,
+  type PlayerView,
+} from '../../engine/index.ts';
 import { fill } from '../../content/index.ts';
 import type { SessionSnapshot } from '../../net/index.ts';
+import { deathsLine, describeAction, nightsOf } from '../director/history.ts';
 import { h, show, ticket } from '../dom.ts';
 import type { UiContext } from '../screens/context.ts';
 
@@ -21,8 +28,11 @@ const REASON: Record<GameResult['reason'], string> = {
   dayLimit: 'The town ran out of days.',
 };
 
-/** The curtain call: outcome, winners, and the full cast with every role. */
-export function createResult(ctx: UiContext): {
+/** The curtain call: outcome, winners, the full cast with every role, and what really happened. */
+export function createResult(
+  ctx: UiContext,
+  opts: { replay(): void },
+): {
   el: HTMLElement;
   update(view: PlayerView, session: SessionSnapshot): void;
 } {
@@ -36,9 +46,15 @@ export function createResult(ctx: UiContext): {
     text: 'Look at the stage',
   });
   const el = h('section', { 'data-testid': 'result', class: 'vx-curtain', hidden: true }, body);
-  hide.onclick = () => {
-    const collapsed = el.classList.toggle('is-collapsed');
-    hide.textContent = collapsed ? 'Show the playbill' : 'Look at the stage';
+  const collapse = (on: boolean) => {
+    el.classList.toggle('is-collapsed', on);
+    hide.textContent = on ? 'Show the playbill' : 'Look at the stage';
+  };
+  hide.onclick = () => collapse(!el.classList.contains('is-collapsed'));
+  const watch = ticket('Watch the nights', { 'data-testid': 'replay-nights' });
+  watch.onclick = () => {
+    collapse(true);
+    opts.replay();
   };
   let key = '';
   return {
@@ -49,7 +65,8 @@ export function createResult(ctx: UiContext): {
       show(back, s.isHost && s.status === 'ended');
       if (!r) return;
       el.dataset.outcome = r.outcome;
-      const k = `${r.outcome}|${view.players.map((p) => p.role).join()}`;
+      const nights = nightsOf(view);
+      const k = `${r.outcome}|${view.players.map((p) => p.role).join()}|${nights.length}`;
       if (k === key) return;
       key = k;
       const winners = new Set(r.winners);
@@ -91,8 +108,34 @@ export function createResult(ctx: UiContext): {
             );
           }),
         ),
-        h('div', { class: 'vx-curtain-actions' }, back, hide),
+        ...(nights.length ? [epilogue(view, nights)] : []),
+        h('div', { class: 'vx-curtain-actions' }, back, nights.length ? watch : null, hide),
       );
     },
   };
+}
+
+/** Night by night: every ability used and what came of it. */
+function epilogue(view: PlayerView, nights: readonly NightRecord[]): HTMLElement {
+  const name = (id: string) => nameOf(view, id);
+  return h(
+    'section',
+    { class: 'vx-nights', 'data-testid': 'epilogue' },
+    h('h3', { class: 'vx-bill-head', text: 'What really happened' }),
+    ...nights.map((n) =>
+      h(
+        'details',
+        { class: 'vx-night' },
+        h(
+          'summary',
+          {},
+          h('span', { class: 'vx-night-n', text: `Night ${n.night}` }),
+          h('span', { class: 'vx-night-d', text: deathsLine(n, name) }),
+        ),
+        n.actions.length
+          ? h('ol', {}, ...n.actions.map((a) => h('li', { text: describeAction(a, name) })))
+          : h('p', { class: 'vx-night-quiet', text: 'Everyone stayed home.' }),
+      ),
+    ),
+  );
 }

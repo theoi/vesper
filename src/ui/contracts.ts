@@ -5,7 +5,7 @@
  * - the director, which turns engine events into short staged sequences (`src/ui/director/`),
  * - the score (`src/audio/`).
  */
-import type { PlayerId, PlayerView } from '../engine/index.ts';
+import type { NightRecord, PlayerId, PlayerView } from '../engine/index.ts';
 
 /** What clicking a shadow or candle does right now. */
 export type PickMode = 'vote' | 'night' | 'whisper' | 'none';
@@ -37,6 +37,8 @@ export interface DirectorApi {
   feed(view: PlayerView): void;
   /** Skip the sequence that is playing. */
   skip(): void;
+  /** After the game: replay every night in shadow ("what really happened"). */
+  replay(nights: NightRecord[]): void;
   setReducedMotion(on: boolean): void;
   dispose(): void;
 }
