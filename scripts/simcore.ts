@@ -366,7 +366,11 @@ export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, In
       for (const p of players) {
         const bot = bots.get(p.id) as BotState;
         const phaseChanged = lastPhase.get(p.id) !== state.phase.startedAt;
-        if (bot.wakeAt > now && !phaseChanged) continue;
+        // Like the host: wake a bot early when it has new events to see.
+        const fresh = state.log
+          .slice(bot.seenSeq)
+          .some((e) => e.audience === 'all' || e.audience.includes(p.id));
+        if (bot.wakeAt > now && !phaseChanged && !fresh) continue;
         lastPhase.set(p.id, state.phase.startedAt);
         const view = viewFor(state, p.id, { sinceSeq: bot.seenSeq });
         const d = decideBot(bot, view, now);

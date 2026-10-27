@@ -406,6 +406,30 @@ export function claimNow(m: Mind, onTrial: boolean): RoleId | null {
   return null;
 }
 
+/** The role to give when someone asks directly, or null to hold it back for now. */
+export function answerRole(m: Mind): RoleId | null {
+  const v = m.view;
+  const mem = m.mem;
+  if (mem.claimed) return mem.claimed;
+  if (v.you.role === 'magistrate') return null;
+  const side = sideNow(m);
+  const bold = m.bot.personality.boldness;
+  const heat = Math.min(mem.heat, 3);
+  if (side === 'harlequin') return m.rng.chance(0.4) ? harlequinClaim(m) : null;
+  const cover = mem.cover ?? v.you.role;
+  if (side === 'town') {
+    // A Resident has nothing to protect; power roles share once they have something to show.
+    if (cover === 'resident') return m.rng.chance(0.75) ? cover : null;
+    const results = claimResults(m, cover);
+    const hard = results.some((r) => r.finding === 'suspicious' || r.finding === 'visited');
+    if (hard) return m.rng.chance(0.6 + bold * 0.4) ? cover : null;
+    return m.rng.chance(0.1 + bold * 0.25 + heat * 0.15) ? cover : null;
+  }
+  // A fake Augur needs a night behind it before it has readings to show.
+  if (cover === 'augur' && v.phase.day < 2) return null;
+  return m.rng.chance(0.3 + bold * 0.3 + heat * 0.1) ? cover : null;
+}
+
 function harlequinClaim(m: Mind): RoleId {
   const pool: RoleId[] = ['augur', 'magistrate', 'reckoner', 'patron', 'resident', 'mender'];
   return m.rng.pick(pool);

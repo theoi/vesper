@@ -29,7 +29,8 @@ for (const i of d.intents) state = applyIntent(state, bot.id, i, now).state; // 
   - Topics include reactions to deaths, wills, and verdicts, plus claims, accusations with reasons, questions, defenses, Syndicate plans, and the dead talking to the Mourner.
   - Each topic renders from large template pools and then passes through one of 12 personalities (temperament, verbosity, boldness, trust, and quirks such as lowercase, nicknames, or a catchphrase).
   - Bots avoid repeating their own recent lines or echoing lines they just heard.
-- **Human chat** (`parse.ts`) is read best-effort: claims ("I'm the Augur, Bea is suspicious"), accusations, defenses, and questions aimed at a bot. Wills in the `N1: Name - Suspicious` format are parsed too.
+- **Human chat** (`parse.ts`) is read best-effort: claims ("I'm the Augur, Bea is suspicious", "Augur here"), accusations ("vote Cal", "your story doesn't add up"), challenges ("Ada, are you Syndicate?"), defenses, and questions aimed at a bot. Wills in the `N1: Name - Suspicious` format are parsed too.
+- **Answering** (`brain.ts`). A bot that is spoken to answers within a few seconds, even if it has already used its lines for the phase (up to two extra). A question about its role gets a claim or a reason to hold it back (`answerRole`). "Who do you suspect?" gets its top suspect, or "no read yet". Other questions get a plain reply. An accusation gets a defense, and a counter-accusation if the bot already distrusts the accuser. Someone claiming a Town bot's unique role gets an immediate counter-claim and a callout. Claims of power roles get belief or doubt in the same phase. A question to the whole table ("Who do you all suspect?") from a person gets a few answers, not one from every bot.
 
 ## The LLM seam
 

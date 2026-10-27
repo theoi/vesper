@@ -22,7 +22,7 @@ import type { BotState } from './types.ts';
 export type * from './types.ts';
 export { decideBot } from './brain.ts';
 export { PERSONALITIES } from './personalities.ts';
-export { parseLine, parseWill } from './parse.ts';
+export { askOf, parseLine, parseWill } from './parse.ts';
 
 export const BOT_NAMES = [
   'Ottilie',

@@ -63,6 +63,9 @@ export interface Reason {
   day: number;
 }
 
+/** What a direct question asks for. */
+export type Ask = 'role' | 'suspect' | 'open';
+
 /** Something a bot intends to say; turned into a line when its turn comes. */
 export type Topic =
   | { t: 'greet' }
@@ -97,7 +100,10 @@ export type Topic =
   | { t: 'magistrate' }
   | { t: 'magistrateReact'; target: PlayerId }
   | { t: 'bait' }
-  | { t: 'reply'; to: PlayerId }
+  /** An answer to a question; `open` when it was asked of everyone. */
+  | { t: 'reply'; to: PlayerId; ask?: Ask; open?: boolean }
+  /** Someone else claimed our unique role. */
+  | { t: 'counterClaim'; target: PlayerId; role: RoleId }
   | { t: 'whisperClaim'; to: PlayerId; role: RoleId }
   | { t: 'end'; outcome: 'win' | 'lose' | 'draw' };
 

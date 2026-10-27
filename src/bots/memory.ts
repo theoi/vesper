@@ -17,9 +17,10 @@ import {
   maxCopies,
   normalize,
   possible,
+  score,
   sideOf,
 } from './knowledge.ts';
-import { parseLine, parseWill } from './parse.ts';
+import { askOf, parseLine, parseWill } from './parse.ts';
 import type { BotMemory, BotState, Topic } from './types.ts';
 
 export interface Mind {
@@ -68,6 +69,14 @@ function soon(m: Mind, key: string, topic: Topic): void {
   if (m.mem.topics.includes(key)) return;
   m.mem.topics.push(key);
   m.reactive.push({ topic, at: m.at });
+}
+
+/** React now if the event happened in this day's open talk, else when public chat next opens. */
+function react(m: Mind, key: string, topic: Topic): void {
+  const k = m.view.phase.kind;
+  const open = k === 'discussion' || k === 'voting';
+  if (open && m.at >= m.view.phase.startedAt && m.view.you.alive) soon(m, key, topic);
+  else later(m, key, topic);
 }
 
 export function ingest(m: Mind, e: GameEvent): void {
@@ -192,10 +201,11 @@ function onChat(m: Mind, e: Extract<GameEvent, { type: 'chat' }>): void {
   if (e.channel !== 'public' || !e.from || e.from === self) return;
   const from = e.from;
   const acts: SpeechAct[] = e.meta ? [e.meta] : parseLine(e.text, m.view.players, from);
-  for (const a of acts) applyAct(m, from, a, e.text);
+  for (const a of acts) applyAct(m, from, a, e.text, !e.meta);
 }
 
-function applyAct(m: Mind, from: PlayerId, a: SpeechAct, text: string): void {
+/** `human`: the line came as free text, without a speech act. */
+function applyAct(m: Mind, from: PlayerId, a: SpeechAct, text: string, human: boolean): void {
   const mem = m.mem;
   const self = me(m);
   const d = day(m);
@@ -220,6 +230,10 @@ function applyAct(m: Mind, from: PlayerId, a: SpeechAct, text: string): void {
           );
         }
         soon(m, `defend:${from}:${d}`, { t: 'defendSelf', accuser: from });
+        // Turn it around on an accuser we already distrust.
+        const s = score(mem, from);
+        if (s >= 3 && !mem.teammates.includes(from) && !holdsClear(m.view, mem, from))
+          soon(m, `counter:${from}:${d}`, { t: 'accuse', target: from, hard: s >= 7 });
       } else if (!mem.teammates.includes(a.target)) {
         bump(mem, a.target, 0.7 * a.confidence * cred(m.bot, mem, from));
         if (mem.known[a.target] === 'hostile') bump(mem, from, -0.4);
@@ -234,11 +248,22 @@ function applyAct(m: Mind, from: PlayerId, a: SpeechAct, text: string): void {
       if (mem.known[a.target] === 'hostile') bump(mem, from, 2, 'gut', undefined, d);
       return;
     }
-    case 'question':
+    case 'question': {
+      const ask = askOf(text);
+      const phase = m.view.phase.kind;
       if (a.target === self || (text.includes('?') && mentionsMe(m, text))) {
-        soon(m, `reply:${from}:${d}:${m.view.phase.kind}`, { t: 'reply', to: from });
+        soon(m, `reply:${from}:${d}:${phase}:${ask}`, { t: 'reply', to: from, ask });
+      } else if (
+        human &&
+        !a.target &&
+        ask === 'suspect' &&
+        m.rng.chance(0.15 + 0.25 * m.bot.personality.verbosity)
+      ) {
+        // A person asking the whole table gets a few answers, not one from everyone.
+        soon(m, `open:${from}:${d}:${phase}`, { t: 'reply', to: from, ask, open: true });
       }
       return;
+    }
     default:
       return;
   }
@@ -266,9 +291,15 @@ export function onClaim(m: Mind, from: PlayerId, role: RoleId, results: ClaimedR
   const holders = m.view.players.filter(
     (p) => p.id !== from && ((!p.alive && p.role === role) || mem.claims[p.id] === role),
   );
+  let countered = false;
   if (myRole === role && maxCopies(m.view, role) <= 1 && knowsInnocent(side(m))) {
     bump(mem, from, 10, 'lyingAboutMe', undefined, d);
     mem.known[from] = 'hostile';
+    if (side(m) === 'town' && role !== 'magistrate') {
+      countered = true;
+      react(m, `counterClaim:${from}`, { t: 'counterClaim', target: from, role });
+      react(m, `liar:${from}`, { t: 'accuse', target: from, hard: true });
+    }
   } else if (holders.length + 1 > Math.max(1, maxCopies(m.view, role))) {
     const deadHolder = holders.find((p) => !p.alive);
     bump(mem, from, deadHolder ? 7 : 3, 'counterClaim', holders[0]?.id, d);
@@ -280,6 +311,10 @@ export function onClaim(m: Mind, from: PlayerId, role: RoleId, results: ClaimedR
     if (prior.some((p) => p.target === r.target && p.finding === r.finding)) continue;
     prior.push(r);
     if (r.finding === 'suspicious') {
+      if (r.target === self) {
+        mem.heat += 1;
+        soon(m, `defend:${from}:${d}`, { t: 'defendSelf', accuser: from });
+      }
       if (r.target === self && knowsInnocent(side(m))) {
         const framable = possible(m.view, 'slanderer');
         bump(mem, from, framable ? 3 : 8, 'lyingAboutMe', undefined, d);
@@ -297,9 +332,9 @@ export function onClaim(m: Mind, from: PlayerId, role: RoleId, results: ClaimedR
     }
   }
   mem.claimResults[from] = prior;
-  if (first && POWER.includes(role)) {
+  if (first && POWER.includes(role) && !countered) {
     const doubt = (mem.suspicion[from] ?? 0) > 2 && !holdsClear(m.view, mem, from);
-    later(
+    react(
       m,
       `claimReact:${from}`,
       doubt ? { t: 'doubt', target: from, role } : { t: 'believe', target: from, role },
