@@ -18,12 +18,25 @@ export function normalizeCode(input: string): string | null {
   return code;
 }
 
-/** Shareable link for a room, e.g. https://theoi.github.io/vesper/?room=KX7QM */
-export function roomLink(code: string, base: string = location.origin + location.pathname): string {
-  const url = new URL(base);
-  url.search = '';
-  url.hash = '';
+/**
+ * Page parameters a share link keeps, so friends open the game the way the
+ * host did: `?ui=` (which UI) and `?gfx=` (stage detail). Whatever the host's
+ * page has goes along; a host on the default UI shares links without `ui`.
+ */
+export const LINK_PARAMS = ['ui', 'gfx'] as const;
+
+/**
+ * Shareable link for a room, e.g. https://theoi.github.io/vesper/?room=KX7QM.
+ * `page` is the host's page URL; only its origin, path, and `LINK_PARAMS` carry over.
+ */
+export function roomLink(code: string, page: string = location.href): string {
+  const from = new URL(page);
+  const url = new URL(from.origin + from.pathname);
   url.searchParams.set('room', code);
+  for (const key of LINK_PARAMS) {
+    const value = from.searchParams.get(key);
+    if (value) url.searchParams.set(key, value);
+  }
   return url.toString();
 }
 
