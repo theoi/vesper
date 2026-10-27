@@ -40,7 +40,7 @@ export type SeqSpec =
       teammates: PlayerId[];
       changed: boolean;
     }
-  | { id: 'dayOpen'; variant: 'first' | 'quiet' | 'mourning'; day: number }
+  | { id: 'dayOpen'; variant: 'first' | 'quiet' | 'mourning'; day: number; line: string }
   | { id: 'trial'; variant: 'cut' | 'walk' | 'again'; defendant: PlayerId }
   | {
       id: 'verdict';
@@ -54,7 +54,13 @@ export type SeqSpec =
     }
   | { id: 'magistrate'; player: PlayerId }
   | { id: 'execution'; variant: 'lamp' | 'lowered'; player: PlayerId; death: DeathInfo | null }
-  | { id: 'nightfall'; variant: 'lamps' | 'fog' | 'lantern'; first: boolean }
+  | {
+      id: 'nightfall';
+      variant: 'lamps' | 'fog' | 'lantern';
+      first: boolean;
+      /** The first night's card text. */
+      line: string;
+    }
   | {
       id: 'dawn';
       variant: 'quiet' | 'one' | 'several';
@@ -120,6 +126,43 @@ export function pickVariant<T>(memo: Memo, kind: string, salt: string, options: 
   memo.last[kind] = i;
   return options[i] as T;
 }
+
+const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+const count = (n: number) => WORDS[n] ?? String(n);
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Lines for the plate as a day opens; one is picked per day, the same for the whole room. */
+export const DAY_LINES = {
+  first: [
+    'The company takes its marks.',
+    'The curtain rises on a small town.',
+    'Places, everyone. The lamp is lit.',
+  ],
+  quiet: [
+    'The lamp rises on a quiet town.',
+    'Every mark is filled this morning.',
+    'The town wakes and counts itself. All here.',
+    'No one is missing. Not yet.',
+  ],
+  mourning: [
+    'One mark stands empty.',
+    'The town wakes one fewer.',
+    'A cold candle stands where someone was.',
+    'There is a gap in the line this morning.',
+  ],
+  mourningMany: [
+    '{N} marks stand empty.',
+    'The town wakes {n} fewer.',
+    '{N} cold candles this morning.',
+  ],
+} as const;
+
+export const FIRST_NIGHT_LINES = [
+  'Lamps out. Do your work in the dark.',
+  'The town sleeps. Not all of it.',
+  'Doors are barred. Some of them will open.',
+  'Wicks are trimmed. The shadows go to work.',
+] as const;
 
 /** Stage the first cause: causes are listed in the order the attacks resolved. */
 function staging(causes: readonly DeathCause[]): DeathInfo['staging'] {
@@ -228,8 +271,14 @@ export function plan(events: readonly GameEvent[], view: PlayerView, memo: Memo)
         break;
       case 'phase':
         if (e.phase === 'discussion') {
-          const variant = e.day === 1 ? 'first' : memo.lastDawnDeaths > 0 ? 'mourning' : 'quiet';
-          seq({ id: 'dayOpen', variant, day: e.day });
+          const dead = memo.lastDawnDeaths;
+          const variant = e.day === 1 ? 'first' : dead > 0 ? 'mourning' : 'quiet';
+          const lines =
+            variant === 'mourning' && dead > 1 ? DAY_LINES.mourningMany : DAY_LINES[variant];
+          const line = pickVariant(memo, `day-${variant}`, salt(e), lines)
+            .replace('{N}', cap(count(dead)))
+            .replace('{n}', count(dead));
+          seq({ id: 'dayOpen', variant, day: e.day, line });
         } else if (e.phase === 'voting') {
           beat({ type: 'votingOpen', need: view.voteThreshold });
         } else if (e.phase === 'night') {
@@ -237,6 +286,7 @@ export function plan(events: readonly GameEvent[], view: PlayerView, memo: Memo)
             id: 'nightfall',
             variant: pickVariant(memo, 'nightfall', salt(e), ['lamps', 'fog', 'lantern'] as const),
             first: e.day === 1,
+            line: pickVariant(memo, 'firstNight', salt(e), FIRST_NIGHT_LINES),
           });
         } else if (e.phase === 'dawn') {
           dawn = {
@@ -349,6 +399,85 @@ export function plan(events: readonly GameEvent[], view: PlayerView, memo: Memo)
   }
   if (loose.length) seq({ id: 'notes', notes: loose });
   return steps;
+}
+
+/**
+ * Rate limit for face cameos, so faces punctuate the day instead of flickering: a gap after
+ * each one (only a more important beat may cut in), and a rest for each face. An urgent
+ * cameo (the human's own face) always gets through.
+ */
+export class CameoGate {
+  private lastAt = -Infinity;
+  private lastPri = -1;
+  private readonly seen = new Map<PlayerId, number>();
+
+  constructor(
+    private readonly gapMs = 3500,
+    private readonly restMs = 10_000,
+  ) {}
+
+  allow(now: number, faces: readonly PlayerId[], pri: number, urgent = false): boolean {
+    if (!urgent) {
+      if (now - this.lastAt < this.gapMs && pri <= this.lastPri) return false;
+      if (faces.some((id) => now - (this.seen.get(id) ?? -Infinity) < this.restMs)) return false;
+    }
+    this.lastAt = now;
+    this.lastPri = pri;
+    for (const id of faces) this.seen.set(id, now);
+    return true;
+  }
+}
+
+/** About how long a sequence runs at normal speed, so the director can fit it to its phase. */
+export function nominalMs(q: SeqSpec): number {
+  switch (q.id) {
+    case 'deal':
+      return 4900;
+    case 'dayOpen':
+      return q.variant === 'first' ? 3600 : q.variant === 'quiet' ? 2600 : 3000;
+    case 'trial':
+      return q.variant === 'walk' ? 3400 : 3000;
+    case 'verdict':
+      return q.variant === 'poly' ? 2500 + Math.min(6, q.guiltyVoters.length) * 280 : 3000;
+    case 'magistrate':
+      return 3500;
+    case 'execution':
+      return q.variant === 'lamp' ? 4700 : 5300;
+    case 'nightfall':
+      return (q.first ? 1500 : 0) + (q.variant === 'lantern' ? 4200 : 2900);
+    case 'dawn': {
+      const notes = q.notes.length * 2300;
+      if (q.deaths.length === 0) return 3000 + notes;
+      if (q.deaths.length === 1) return 5100 + notes;
+      return 900 + q.deaths.length * 2800 + notes;
+    }
+    case 'death':
+      return 5100;
+    case 'notes':
+      return q.notes.length * 2300;
+    case 'finale':
+      return 5400;
+    case 'replay':
+      return 0;
+  }
+}
+
+/** Fastest a sequence plays to fit its phase; beyond this a card can no longer be read. */
+export const MAX_FIT = 2.4;
+/** A sequence whose phase is already over catches up in about this long. */
+export const CATCH_UP_SEQ_MS = 1000;
+
+/**
+ * Playback speed for a sequence: it should end with its phase (`leftMs` before the phase
+ * ends, null when the phase has no timer), never play slower than normal or faster than
+ * MAX_FIT, and when its phase has already passed (`late`) catch up in about a second.
+ */
+export function fitSpeed(nominal: number, leftMs: number | null, late: boolean): number {
+  if (late) return Math.max(MAX_FIT, nominal / CATCH_UP_SEQ_MS);
+  if (leftMs === null || nominal <= 0) return 1;
+  const budget = leftMs - 250;
+  if (budget <= 0) return MAX_FIT;
+  return Math.min(MAX_FIT, Math.max(1, nominal / budget));
 }
 
 /** Sequences that may be dropped when the stage falls behind the game. */

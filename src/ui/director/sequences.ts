@@ -9,25 +9,53 @@ import type { DeathInfo, Note, SeqSpec } from './plan.ts';
 export class Skip extends Error {}
 
 /** One run of a sequence: waits that end early on skip, timers and extras it cleans up. */
+interface Wait {
+  id: number;
+  due: number;
+  done: () => void;
+  reject: (e: Error) => void;
+}
+
 export class Take {
   skipped = false;
-  speed = 1;
-  private waits = new Set<{ id: number; reject: (e: Error) => void }>();
+  private rate = 1;
+  private waits = new Set<Wait>();
   private timers = new Set<number>();
   readonly extras = new Set<Shade>();
 
   constructor(private readonly stage: Stage) {}
 
+  get speed(): number {
+    return this.rate;
+  }
+
+  /** Changing the speed also rescales the wait in progress, so catching up starts at once. */
+  set speed(v: number) {
+    if (v === this.rate || v <= 0) return;
+    const k = this.rate / v;
+    this.rate = v;
+    const now = performance.now();
+    for (const w of this.waits) {
+      window.clearTimeout(w.id);
+      w.due = now + Math.max(0, w.due - now) * k;
+      w.id = window.setTimeout(w.done, w.due - now);
+    }
+  }
+
   wait(ms: number): Promise<void> {
     if (this.skipped) return Promise.reject(new Skip());
     return new Promise((resolve, reject) => {
-      const w = {
-        id: window.setTimeout(() => {
+      const delay = ms / this.rate;
+      const w: Wait = {
+        id: 0,
+        due: performance.now() + delay,
+        done: () => {
           this.waits.delete(w);
           resolve();
-        }, ms / this.speed),
+        },
         reject,
       };
+      w.id = window.setTimeout(w.done, delay);
       this.waits.add(w);
     });
   }
@@ -36,7 +64,7 @@ export class Take {
     const id = window.setTimeout(() => {
       this.timers.delete(id);
       if (!this.skipped) fn();
-    }, ms / this.speed);
+    }, ms / this.rate);
     this.timers.add(id);
   }
 
@@ -156,13 +184,13 @@ async function dayOpen({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'dayOpen' }>)
       sh.face(x < 50 ? 1 : -1);
       t.later(170 * i, () => sh.go({ z: 0, dim: 1 }, 1300, 'cubic-bezier(.2,.7,.3,1)'));
     });
-    s.plate('The company takes its marks.', 'Day 1', 3200);
+    s.plate(q.line, 'Day 1', 3200);
     await t.wait(3600);
     return;
   }
   s.cloth.look('day', 2200);
   if (q.variant === 'quiet') {
-    s.plate('The lamp rises on a quiet town.', `Day ${q.day}`, 2600);
+    s.plate(q.line, `Day ${q.day}`, 2600);
     alive.forEach((id, i) => {
       const sh = s.shadeOf(id);
       if (!sh || i % 2) return;
@@ -176,7 +204,7 @@ async function dayOpen({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'dayOpen' }>)
   const gone = view.graveyard
     .filter((g) => g.day === q.day - 1 && g.time === 'night')
     .map((g) => g.id);
-  s.plate('One mark stands empty.', `Day ${q.day}`, 2800);
+  s.plate(q.line, `Day ${q.day}`, 2800);
   const grave = gone[0];
   const mourner = grave
     ? alive
@@ -414,20 +442,24 @@ async function revealDeath(
     await t.wait(1100);
   }
   a.cue('reveal');
+  // The name is the headline: whoever glances at the card should know who died.
   s.film.card(
     d.embalmed || !d.role
       ? {
-          kicker: who,
+          face,
+          title: who,
           role: 'The coffin is closed',
           body: 'Someone took the name away.',
           tone: 'paper',
         }
       : {
-          kicker: who,
+          face,
+          title: who,
           role: `the ${roleName(d.role)}`,
           body: ROLES[d.role].flavor,
           tone: toneOf(d.role),
         },
+    'death',
   );
   await t.wait(short ? 1300 : 1700);
   s.film.clear();
@@ -551,7 +583,7 @@ async function nightfall(
     s.film.card({
       kicker: 'Night 1',
       title: 'Nightfall',
-      body: 'Lamps out. Do your work in the dark.',
+      body: q.line,
     });
     a.cue('cut');
     await t.wait(1500);

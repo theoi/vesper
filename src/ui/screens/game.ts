@@ -101,7 +101,7 @@ export function gameFrame(ctx: UiContext): Frame {
       root.faction = v.you.faction;
       root.alive = String(v.you.alive);
       stage.update(v);
-      director.feed(v);
+      director.feed(v, s.clockOffset);
       chat.update(v, s);
       letters.update(v);
       result.update(v, s);
