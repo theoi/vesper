@@ -66,6 +66,8 @@ export class SampleBank {
   play(ctx: Ctx, out: AudioNode, name: string, t: number, o: PlayOptions = {}): Voice | null {
     const buf = this.buffers.get(name);
     if (!buf) return null;
+    // Offline renders start at 0, so a cue scheduled slightly early would be a negative time.
+    t = Math.max(0, t);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = o.rate ?? 1;

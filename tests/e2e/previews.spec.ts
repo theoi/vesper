@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 // Directions whose preview pages are merged. Each must start, play every scene, and make sound.
 // Round two leads the index; round one stays live as an archive.
-const SLUGS = ['supper', 'masque', 'agitprop', 'deadair'];
+const SLUGS = ['supper', 'seance', 'scrim', 'masque', 'agitprop', 'deadair'];
 
 interface PreviewApi {
   scenes: { id: string }[];
