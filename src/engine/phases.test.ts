@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyIntent, createGame, tick } from './game.ts';
+import { applyIntent, createGame, nextDeadline, tick } from './game.ts';
 import { DEFAULT_OPTIONS } from './setup.ts';
 import {
   TEST_TIMERS,
@@ -12,8 +12,9 @@ import {
   step,
   tryAct,
   until,
+  type Driver,
 } from './testkit.ts';
-import type { GameEvent, RoleId } from './types.ts';
+import type { GameEvent, PlayerId, RoleId } from './types.ts';
 import { viewFor } from './view.ts';
 
 const SIX: RoleId[] = ['resident', 'resident', 'resident', 'resident', 'resident', 'hatchet'];
@@ -194,5 +195,71 @@ describe('phase flow', () => {
     state = tick(state, state.phase.endsAt as number).state;
     expect(state.phase.kind).toBe('dawn');
     expect((state.phase.endsAt as number) - state.phase.startedAt).toBe(750);
+  });
+});
+
+describe('trial window', () => {
+  /** Day 2 voting (10 s long) with the given trial delay; omitted uses the default. */
+  function voting(delay?: number): Driver {
+    const s = pinnedGame(SIX);
+    const { trialDelay: _, ...timers } = s.config.timers;
+    s.config = {
+      ...s.config,
+      timers: delay === undefined ? timers : { ...timers, trialDelay: delay },
+    };
+    return until(runNight(start(s), {}), 'voting');
+  }
+  const voteAt = (d: Driver, id: PlayerId, target: PlayerId | null, at: number): Driver => {
+    const r = applyIntent(d.state, id, { type: 'vote', target }, at);
+    if (r.error) throw new Error(r.error);
+    return { state: r.state, events: [...d.events, ...r.events] };
+  };
+  const MAJORITY = ['p0', 'p1', 'p2', 'p3'];
+
+  it('a majority reached early waits for the window, then the trial starts', () => {
+    let d = voting(3000);
+    const opens = d.state.phase.startedAt + 3000;
+    expect(viewFor(d.state, 'p0').trialOpensAt).toBe(opens);
+    for (const id of MAJORITY) d = voteAt(d, id, 'p5', d.state.phase.startedAt + 500);
+    expect(d.state.phase.kind).toBe('voting');
+    expect(nextDeadline(d.state)).toBe(opens);
+    expect(tick(d.state, opens - 1).state.phase.kind).toBe('voting');
+    const after = tick(d.state, opens).state;
+    expect(after.phase.kind).toBe('defense');
+    expect(after.trial).toMatchObject({ defendant: 'p5', number: 1 });
+    expect(viewFor(after, 'p0').trialOpensAt).toBeNull();
+  });
+
+  it('once the window is open, a majority starts the trial at once', () => {
+    let d = voting(3000);
+    const opens = d.state.phase.startedAt + 3000;
+    for (const id of MAJORITY) d = voteAt(d, id, 'p5', opens + 10);
+    expect(d.state.phase.kind).toBe('defense');
+  });
+
+  it('a majority that breaks up before the window opens starts nothing', () => {
+    let d = voting(3000);
+    const t0 = d.state.phase.startedAt;
+    for (const id of MAJORITY) d = voteAt(d, id, 'p5', t0 + 500);
+    d = voteAt(d, 'p3', null, t0 + 1000);
+    expect(nextDeadline(d.state)).toBe(d.state.phase.endsAt);
+    expect(tick(d.state, t0 + 3000).state.phase.kind).toBe('voting');
+  });
+
+  it('defaults to 35% of the voting time and never takes more than half of it', () => {
+    const delay = (d: Driver) =>
+      (viewFor(d.state, 'p0').trialOpensAt as number) - d.state.phase.startedAt;
+    expect(delay(voting())).toBe(3500);
+    expect(delay(voting(8000))).toBe(5000);
+    const discussion = until(start(pinnedGame(SIX)), 'discussion');
+    expect(viewFor(discussion.state, 'p0').trialOpensAt).toBeNull();
+  });
+
+  it('rejects a bad trial delay', () => {
+    const players = SIX.map((_, i) => ({ id: `p${i}`, name: `N${i}`, isBot: true }));
+    const timers = { ...TEST_TIMERS, trialDelay: -1 };
+    expect(() =>
+      createGame({ players, roles: SIX, timers, options: DEFAULT_OPTIONS }, 1, 0),
+    ).toThrow(/trialDelay/);
   });
 });

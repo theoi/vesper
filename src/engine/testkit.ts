@@ -48,6 +48,8 @@ export const TEST_TIMERS: Timers = {
   night: 1000,
   dawn: 1000,
   dawnPerDeath: 0,
+  // Most tests put someone on trial with instant votes; the window has its own tests.
+  trialDelay: 0,
 };
 
 /**

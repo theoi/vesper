@@ -29,6 +29,7 @@ import {
   type RoleSlot,
   type Timers,
 } from '../src/engine/index.ts';
+import { actStandIn, createStandIn, type StandIn, type StandInStyle } from './standin.ts';
 
 /** Markdown transcript of a finished game; `annotate` may add lines under a chat event. */
 export function formatTranscript(
@@ -83,6 +84,11 @@ export interface SimOptions {
   maxGameTime?: number;
   /** Keep the full log on the result (for transcripts). */
   keepState?: boolean;
+  /** The first `humans` seats are played by a stand-in human (`standin.ts`), not a bot. */
+  humans?: number;
+  /** Bots woken by new events act this much later, like HostSession (default 400 ms). */
+  reactMs?: number;
+  standInStyle?: Partial<StandInStyle>;
 }
 
 export interface SimResult {
@@ -109,6 +115,8 @@ export interface SimResult {
     accusers: number;
   };
   state?: GameState;
+  /** The stand-in humans, with the time each meant to vote in every voting phase. */
+  standIns?: StandIn[];
 }
 
 const NEXT: Record<PhaseKind, PhaseKind[]> = {
@@ -347,14 +355,23 @@ export async function runGameAsync(
 export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, Intent | null> {
   const timers = opts.timers ?? FAST_TIMERS;
   const names = pickBotNames(opts.players, opts.seed);
-  const players = names.map((name, i) => ({ id: `b${i}`, name, isBot: true }));
+  const humans = Math.max(0, Math.min(opts.humans ?? 0, opts.players));
+  const reactMs = Math.max(1, opts.reactMs ?? 400);
+  const players = names.map((name, i) =>
+    i < humans ? { id: `h${i}`, name, isBot: false } : { id: `b${i}`, name, isBot: true },
+  );
   const base = defaultConfig(players, { timers });
   const config: GameConfig = { ...base, roles: opts.roles ?? base.roles };
   let { state } = createGame(config, opts.seed, 0);
   const bots = new Map<PlayerId, BotState>(
-    players.map((p, i) => [p.id, createBot(p.id, opts.seed * 31 + i)]),
+    players.filter((p) => p.isBot).map((p, i) => [p.id, createBot(p.id, opts.seed * 31 + i)]),
   );
-  const lastPhase = new Map<PlayerId, number>();
+  const standIns = new Map<PlayerId, StandIn>(
+    players
+      .filter((p) => !p.isBot)
+      .map((p, i) => [p.id, createStandIn(p.id, opts.seed * 17 + i, opts.standInStyle)]),
+  );
+  const lastHumanSeq = new Map<PlayerId, number>();
   const violations: string[] = [];
   const rejectedSamples: string[] = [];
   let now = 0;
@@ -385,43 +402,13 @@ export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, In
     state = r.state;
   };
 
+  // The same loop as HostSession: advance expired phases, give every bot that
+  // is due (or has new events to see) one turn in seat order, then sleep until
+  // the next deadline or wake-up. New events wake the bots `reactMs` later.
   for (let guard = 0; guard < 200_000; guard++) {
-    // Let every bot that is due (or whose phase changed) act at `now`.
-    for (let pass = 0; pass < 20; pass++) {
-      let any = false;
-      for (const p of players) {
-        const bot = bots.get(p.id) as BotState;
-        const phaseChanged = lastPhase.get(p.id) !== state.phase.startedAt;
-        // Like the host: wake a bot early when it has new events to see.
-        const fresh = state.log
-          .slice(bot.seenSeq)
-          .some((e) => e.audience === 'all' || e.audience.includes(p.id));
-        if (bot.wakeAt > now && !phaseChanged && !fresh) continue;
-        lastPhase.set(p.id, state.phase.startedAt);
-        const view = viewFor(state, p.id, { sinceSeq: bot.seenSeq });
-        const d = decideBot(bot, view, now);
-        botCalls++;
-        bots.set(p.id, d.bot);
-        const seqBefore = state.seq;
-        for (const s of d.speech) {
-          const intent = yield { botId: p.id, speech: s, state, now };
-          if (intent) apply(p.id, intent);
-        }
-        for (const intent of d.intents) apply(p.id, intent);
-        if (state.seq !== seqBefore) any = true;
-      }
-      if (!any) break;
-    }
-    if (state.phase.kind === 'ended') {
-      if (endedPasses++ > 0) break;
-      now += 3000;
-      continue;
-    }
-    const deadline = nextDeadline(state) ?? now;
-    let next = deadline;
-    for (const b of bots.values()) if (b.wakeAt > now && b.wakeAt < next) next = b.wakeAt;
-    now = Math.max(now + 1, next);
-    if (now >= deadline) {
+    const seqBefore = state.seq;
+    const deadline = nextDeadline(state);
+    if (deadline !== null && now >= deadline) {
       const before = state;
       const r = tick(state, now);
       steps++;
@@ -432,6 +419,42 @@ export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, In
         if (sample) auditView(state, sample.id, violations);
       }
     }
+    for (const p of players) {
+      const human = standIns.get(p.id);
+      if (human) {
+        if (human.wakeAt > now && !state.log.slice(lastHumanSeq.get(p.id) ?? 0).length) continue;
+        lastHumanSeq.set(p.id, state.seq);
+        const r = actStandIn(human, viewFor(state, p.id), now);
+        standIns.set(p.id, r.standIn);
+        for (const intent of r.intents) apply(p.id, intent);
+        continue;
+      }
+      const bot = bots.get(p.id) as BotState;
+      const fresh = state.log
+        .slice(bot.seenSeq)
+        .some((e) => e.audience === 'all' || e.audience.includes(p.id));
+      if (bot.wakeAt > now && !fresh) continue;
+      const view = viewFor(state, p.id, { sinceSeq: bot.seenSeq });
+      const d = decideBot(bot, view, now);
+      botCalls++;
+      bots.set(p.id, d.bot);
+      for (const intent of d.intents) apply(p.id, intent);
+      for (const s of d.speech) {
+        const intent = yield { botId: p.id, speech: s, state, now };
+        if (intent) apply(p.id, intent);
+      }
+    }
+    const dirty = state.seq !== seqBefore;
+    if (state.phase.kind === 'ended') {
+      if (endedPasses++ > 2) break;
+      now += 3000;
+      continue;
+    }
+    let next = nextDeadline(state) ?? now + 3000;
+    for (const b of bots.values()) if (b.wakeAt > now && b.wakeAt < next) next = b.wakeAt;
+    for (const h of standIns.values()) if (h.wakeAt > now && h.wakeAt < next) next = h.wakeAt;
+    if (dirty) next = Math.min(next, now + reactMs);
+    now = Math.max(now + 1, next);
     if (now > maxGameTime) break;
   }
   const ended = state.phase.kind === 'ended';
@@ -468,5 +491,6 @@ export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, In
       drifterAlive: drifters.filter((p) => p.alive).length,
     },
     ...(opts.keepState ? { state } : {}),
+    ...(standIns.size > 0 ? { standIns: [...standIns.values()] } : {}),
   };
 }

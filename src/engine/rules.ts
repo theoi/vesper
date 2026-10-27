@@ -156,3 +156,30 @@ export function cleanBlock(text: unknown, max: number): string {
     .trim()
     .slice(0, max);
 }
+
+/**
+ * During voting, when a vote majority may first start a trial (see
+ * `Timers.trialDelay`). Null outside voting.
+ */
+export function trialOpensAt(s: GameState): number | null {
+  if (s.phase.kind !== 'voting' || s.phase.endsAt === null) return null;
+  const t = s.config.timers;
+  const delay = t.trialDelay ?? Math.round(t.voting * 0.35);
+  const length = s.phase.endsAt - s.phase.startedAt;
+  return s.phase.startedAt + Math.max(0, Math.min(delay, length / 2));
+}
+
+/** The player the current votes would put on trial: most votes, seat order breaks ties. */
+export function majorityTarget(s: GameState): PlayerId | null {
+  const need = voteThreshold(s);
+  let best: PlayerId | null = null;
+  let bestTally = 0;
+  for (const p of s.players) {
+    const n = tallyFor(s, p.id);
+    if (n >= need && n > bestTally) {
+      best = p.id;
+      bestTally = n;
+    }
+  }
+  return best;
+}

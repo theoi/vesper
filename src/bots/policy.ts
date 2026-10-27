@@ -14,6 +14,7 @@ import {
   type Side,
 } from './knowledge.ts';
 import type { Mind } from './memory.ts';
+import type { ReasonKey } from './types.ts';
 
 export function sideNow(m: Mind): Side {
   return sideOf(m.mem.role ?? m.view.you.role);
@@ -227,8 +228,8 @@ export function voteChoice(m: Mind): PlayerId | null {
     const wagon = leading.find(([id, n]) => n >= 1 && safe.includes(id))?.[0];
     if (wagon && m.rng.chance(0.85)) return wagon;
     const scapegoat = pickBest(m, safe, (id) => townSuspicion(m, id), 1);
-    if (scapegoat && (townSuspicion(m, scapegoat) >= 1.5 || m.rng.chance(p.boldness * 0.5)))
-      return scapegoat;
+    const nerve = p.boldness * 0.5 + 0.3 * lateness(m);
+    if (scapegoat && (townSuspicion(m, scapegoat) >= 1.5 || m.rng.chance(nerve))) return scapegoat;
     return null;
   }
   if (side === 'accuser') {
@@ -241,11 +242,39 @@ export function voteChoice(m: Mind): PlayerId | null {
   if (!best) return null;
   const known = options.find((id) => mem.known[id] === 'hostile');
   if (known) return known;
-  if (nearMajority && score(mem, nearMajority) >= 0.5 && mem.known[nearMajority] !== 'town')
+  const pushed = v.players[mem.flags.pushTarget ?? -1]?.id;
+  if (pushed && mem.flags.pushDay === v.phase.day && options.includes(pushed)) {
+    if (score(mem, pushed) >= 0.5 - 0.75 * lateness(m) && mem.known[pushed] !== 'town')
+      return pushed;
+  }
+  if (nearMajority && score(mem, nearMajority) >= 1 && mem.known[nearMajority] !== 'town')
     return nearMajority;
-  const threshold = (side === 'drifter' ? 4.5 : 3.5) - p.boldness * 1.5 - pressure(m);
+  const hold = mem.flags.holdVote ? 1.5 : 0;
+  const threshold =
+    (side === 'drifter' ? 4.5 : 3.5) - p.boldness * 1.5 - pressure(m) - 1.5 * lateness(m) + hold;
   if (score(mem, best) >= threshold) return best;
   return null;
+}
+
+const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+
+/** 0 for the first half of the phase, rising to 1 as its time runs out. */
+function lateness(m: Mind): number {
+  const p = m.view.phase;
+  if (p.endsAt === null) return 0;
+  const f = (m.now - p.startedAt) / Math.max(1, p.endsAt - p.startedAt);
+  return Math.min(1, Math.max(0, (f - 0.5) / 0.5));
+}
+
+/** The defendant's claim fits the role list and nobody else alive holds it. */
+function credibleClaim(m: Mind, d: PlayerId): boolean {
+  const v = m.view;
+  const claim = m.mem.claims[d];
+  if (!claim || !possible(v, claim)) return false;
+  const rivals = v.players.filter(
+    (p) => p.id !== d && (m.mem.claims[p.id] === claim || (!p.alive && p.role === claim)),
+  ).length;
+  return rivals + 1 <= Math.max(1, maxCopies(v, claim));
 }
 
 export function ballotChoice(m: Mind): 'guilty' | 'innocent' | 'abstain' {
@@ -265,14 +294,52 @@ export function ballotChoice(m: Mind): 'guilty' | 'innocent' | 'abstain' {
   if (mem.known[d] === 'hostile') return 'guilty';
   if (mem.known[d] === 'town') return 'innocent';
   if (holdsClear(v, mem, d)) return 'innocent';
-  let s = score(mem, d);
-  const claim = mem.claims[d];
-  if (claim && possible(v, claim) && (mem.suspicion[d] ?? 0) < 3)
-    s -= 1.2 * m.bot.personality.trust;
-  if (s >= 0.8 - m.bot.personality.boldness * 0.6 - pressure(m) * 0.5) return 'guilty';
-  if (s <= -1.2) return 'innocent';
-  return m.rng.chance(0.5 + m.bot.personality.boldness * 0.3) ? 'guilty' : 'abstain';
+  const p = m.bot.personality;
+  const s = score(mem, d);
+  const bar = 1.5 - p.boldness * 0.6 - pressure(m) * 0.4;
+  const keys = (mem.reasons[d] ?? []).map((x) => x.k);
+  const hard = keys.some((k) => HARD_EVIDENCE.has(k));
+  const credible = credibleClaim(m, d);
+  const r = m.rng.next();
+  if (hard) {
+    if (!credible || s >= bar + 2 * p.trust) return 'guilty';
+    return r < 0.5 ? 'guilty' : r < 0.85 ? 'innocent' : 'abstain';
+  }
+  // Clashing claims and bad wagons point both ways, so the town splits on them.
+  // In sims these defendants are Syndicate about as often as Town; how much
+  // suspicion has piled up is what tells them apart.
+  const mixed = new Set(keys.filter((k) => MIXED_EVIDENCE.has(k))).size;
+  if (mixed >= 2 && !credible) return r < 0.85 ? 'guilty' : r < 0.95 ? 'innocent' : 'abstain';
+  if (mixed > 0) {
+    const lean = clamp((s - 3) / 9, 0.15, 0.9) + p.boldness * 0.1 - (credible ? 0.25 : 0);
+    return r < lean ? 'guilty' : r < lean + (1 - lean) * 0.8 ? 'innocent' : 'abstain';
+  }
+  // Only a hunch: a believable claim usually earns the benefit of the doubt.
+  if (credible) {
+    const doubt = 0.5 + 0.35 * p.trust;
+    return r < doubt ? 'innocent' : r < doubt + 0.15 ? 'abstain' : 'guilty';
+  }
+  if (s >= bar) return r < 0.75 ? 'guilty' : 'abstain';
+  return r < 0.55 ? 'innocent' : r < 0.8 ? 'abstain' : 'guilty';
 }
+
+/**
+ * Reasons that single out the Syndicate in practice: a result, a lie, or
+ * shielding someone who flipped Syndicate. Bot-only sims show these are several
+ * times more common on Syndicate defendants than on Town ones.
+ */
+const HARD_EVIDENCE = new Set<ReasonKey>([
+  'readSuspicious',
+  'claimedSuspicious',
+  'fakeClaim',
+  'lyingAboutMe',
+  'visitedVictim',
+  'defendedMafia',
+  'innocentOnMafia',
+]);
+
+/** Reasons that land on Town and Syndicate alike: claim clashes, bad wagons, the dead's hunches. */
+const MIXED_EVIDENCE = new Set<ReasonKey>(['counterClaim', 'votedTown', 'accusedByDead']);
 
 export function shouldReveal(m: Mind): boolean {
   const v = m.view;

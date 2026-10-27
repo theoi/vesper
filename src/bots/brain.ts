@@ -81,6 +81,7 @@ export function freshMemory(): BotMemory {
     topics: [],
     recent: [],
     heard: [],
+    room: [],
     heat: 0,
     flags: {},
   };
@@ -117,6 +118,7 @@ function cloneMemory(m: BotMemory): BotMemory {
     topics: m.topics.slice(),
     recent: m.recent.slice(),
     heard: m.heard.slice(),
+    room: (m.room ?? []).slice(),
     flags: { ...m.flags },
   };
 }
@@ -194,11 +196,14 @@ function duration(t: Turn): number {
 function maxLines(t: Turn): number {
   const verb = t.bot.personality.verbosity;
   if (!t.view.you.alive) return t.view.phase.kind === 'ended' ? 1 : 2;
+  // A big table shares the floor: each bot says less as more players are alive.
+  const alive = t.view.players.filter((p) => p.alive).length;
+  const share = Math.min(1, 8 / Math.max(1, alive - 1));
   switch (t.view.phase.kind) {
     case 'discussion':
-      return 1 + Math.round(verb * 5);
+      return 1 + Math.round(verb * 5 * share);
     case 'voting':
-      return 1 + Math.round(verb * 2);
+      return 1 + Math.round(verb * 2 * share);
     case 'judgment':
       return 1;
     case 'defense':
@@ -241,12 +246,21 @@ function onPhase(t: Turn, key: string): void {
   const dur = duration(t);
   const verb = t.bot.personality.verbosity;
   const bold = t.bot.personality.boldness;
+  // News the room had no space for during discussion is still worth saying in the vote.
+  const carried =
+    v.phase.kind === 'voting' && mem.phaseKey.startsWith('discussion:')
+      ? mem.queue.filter((x) => NEWS.has(x.t))
+      : [];
   mem.phaseKey = key;
   mem.phaseStart = start;
   mem.said = 0;
   mem.acted = false;
-  mem.queue = [];
+  mem.queue = carried;
   mem.nextChatAt = start + Math.min(dur * 0.3, rand(t, 1500, 6000) * (1.3 - verb));
+  // Day 1 opens while people are still reading their roles.
+  if (v.phase.kind === 'discussion' && v.phase.day === 1) {
+    mem.nextChatAt = Math.max(mem.nextChatAt, start + rand(t, 2500, 5000));
+  }
   mem.readyAt = start + dur * rand(t, 0.45, 0.8);
   mem.actAt = start + dur * rand(t, 0.1, 0.5);
   const me = v.you;
@@ -273,13 +287,19 @@ function onPhase(t: Turn, key: string): void {
       planDiscussion(t);
       return;
     case 'voting':
-      mem.actAt = start + Math.min(dur * 0.6, dur * rand(t, 0.05, 0.45) * (1.25 - bold));
+      // Bold bots move first and the rest follow over the first half of the vote.
+      // A trial still waits for `view.trialOpensAt`, so people get to vote too.
+      // (Sims: holding most votes back to the second half costs the Town about
+      // 5 points, since the votes themselves are evidence.)
+      mem.actAt =
+        start + Math.max(2000, Math.min(dur * 0.6, dur * rand(t, 0.05, 0.45) * (1.25 - bold)));
+      mem.flags.holdVote = t.rng.chance(0.25 - 0.15 * bold) ? 1 : 0;
       return;
     case 'defense':
       if (v.trial?.defendant === me.id) planDefense(t);
       return;
     case 'judgment':
-      mem.actAt = start + dur * rand(t, 0.1, 0.6);
+      mem.actAt = start + Math.max(3000, dur * rand(t, 0.3, 0.8));
       return;
     case 'lastWords':
       if (v.trial?.defendant === me.id) {
@@ -467,6 +487,11 @@ function act(t: Turn): void {
         break;
     }
   }
+  // A vote or ballot can end the phase (a trial starts, judgment closes), and the
+  // host applies intents before speech, so talk about it on the next turn.
+  if (t.intents.some((i) => i.type === 'vote' || i.type === 'judge')) {
+    mem.nextChatAt = Math.max(mem.nextChatAt, t.now + rand(t, 500, 1500));
+  }
   speak(t);
   maybeReady(t);
 }
@@ -478,6 +503,7 @@ function actVote(t: Turn): void {
   const recheck = mem.flags.nextVoteCheck ?? 0;
   if (mem.acted && t.now < recheck) return;
   mem.flags.nextVoteCheck = t.now + rand(t, 2000, 5000);
+  maybePush(t);
   const choice = voteChoice(t);
   const current = v.you.vote;
   if (choice && choice !== current && (!mem.acted || !current || t.rng.chance(0.5))) {
@@ -489,6 +515,28 @@ function actVote(t: Turn): void {
     if (tally === need - 1 && t.rng.chance(0.3)) mem.queue.push({ t: 'urge', target: choice });
   }
   mem.acted = true;
+}
+
+/**
+ * Halfway through a vote with no name gathering support, a bold bot puts its
+ * suspect forward in chat (once per day for the whole room).
+ */
+function maybePush(t: Turn): void {
+  const v = t.view;
+  const mem = t.mem;
+  const p = v.phase;
+  if (p.endsAt === null || mem.flags.pushDay === p.day) return;
+  if (t.now < p.startedAt + (p.endsAt - p.startedAt) * 0.5) return;
+  const counts = new Map<PlayerId, number>();
+  for (const target of Object.values(v.votes)) counts.set(target, (counts.get(target) ?? 0) + 1);
+  if ([...counts.values()].some((n) => n >= 2)) return;
+  if (!t.rng.chance(0.25 + 0.45 * t.bot.personality.boldness)) return;
+  const top = suspectToName(t, 0.5);
+  if (!top || !v.allowed.voteTargets.includes(top)) return;
+  mem.flags.pushDay = p.day;
+  mem.flags.pushTarget = v.players.findIndex((x) => x.id === top);
+  mem.queue.unshift({ t: 'accuse', target: top, hard: false });
+  mem.nextChatAt = Math.min(mem.nextChatAt, t.now + rand(t, 300, 1200));
 }
 
 function actNight(t: Turn): void {
@@ -598,15 +646,81 @@ function channelFor(t: Turn, topic: Topic): 'public' | 'mafia' | 'dead' | 'whisp
   }
 }
 
+/** Window and rate for the room's shared chat budget (all bots and people together). */
+const ROOM_WINDOW_MS = 6000;
+
+/** Public lines per second the whole room may carry: about 0.7 at 9 players, 0.8 at 15. */
+export function roomRate(players: number): number {
+  return Math.min(0.85, 0.5 + 0.02 * players);
+}
+
+/** Share of the room's budget a line may use: small talk yields, news gets through. */
+function budgetShare(topic: Topic): number {
+  if (FILLER.has(topic.t)) return 0.6;
+  return NEWS.has(topic.t) ? 1.4 : 1;
+}
+
+function roomFull(t: Turn, topic: Topic): boolean {
+  const recent = t.mem.room.filter((at) => at > t.now - ROOM_WINDOW_MS).length;
+  const budget = (roomRate(t.view.players.length) * ROOM_WINDOW_MS) / 1000;
+  return recent >= budget * budgetShare(topic);
+}
+
+/** An answer owed to a person (not a bot): it skips the room's queue. */
+function owedToHuman(t: Turn, topic: Topic): boolean {
+  const to =
+    topic.t === 'reply'
+      ? topic.to
+      : topic.t === 'defendSelf'
+        ? topic.accuser
+        : topic.t === 'counterClaim'
+          ? topic.target
+          : null;
+  return !!to && t.view.players.some((p) => p.id === to && !p.isBot);
+}
+
+const FILLER = new Set<Topic['t']>([
+  'greet',
+  'banter',
+  'trialReact',
+  'quietNight',
+  'question',
+  'death',
+  'exec',
+  'magistrateReact',
+]);
+
+/** Lines that carry information the table needs before it votes. */
+const NEWS = new Set<Topic['t']>([
+  'claim',
+  'counterClaim',
+  'mournerRelay',
+  'accuse',
+  'defendSelf',
+  'defendOther',
+  'will',
+  'deathNote',
+  'doubt',
+  'believe',
+]);
+
 function speak(t: Turn): void {
   const mem = t.mem;
   if (!hasMoreToSay(t) || t.now < mem.nextChatAt) return;
   const over = mem.said >= maxLines(t);
+  const urgent = mem.queue.findIndex((x) => isDirect(x) && owedToHuman(t, x));
+  if (urgent > 0) mem.queue.unshift(...mem.queue.splice(urgent, 1));
   while (mem.queue.length > 0) {
     const topic = mem.queue.shift() as Topic;
     if (over && !isDirect(topic)) continue;
     const channel = channelFor(t, topic);
     if (!channel) continue;
+    if (channel === 'public' && !owedToHuman(t, topic) && roomFull(t, topic)) {
+      // The room is full: drop small talk, and wait a beat to say anything else.
+      if (!(FILLER.has(topic.t) && t.rng.chance(0.5))) mem.queue.unshift(topic);
+      mem.nextChatAt = t.now + rand(t, 800, 2500);
+      return;
+    }
     const line = toLine(t, topic);
     if (!line) continue;
     const text = line.text;
@@ -706,6 +820,22 @@ function baseReason(t: Turn, target: PlayerId, specific: boolean): string {
       ]);
     }
   }
+}
+
+/** Day 1 opens with this long before anyone prompts a person by name. */
+const DAY1_HUSH_MS = 15_000;
+
+/**
+ * Whether we may put a question to this player by name. People get time to
+ * read their role on Day 1, and at most one such question a day from the room.
+ */
+function mayPrompt(t: Turn, id: PlayerId): boolean {
+  const p = t.view.players.find((x) => x.id === id);
+  if (!p || p.isBot) return true;
+  const v = t.view;
+  if (v.phase.day === 1 && t.now < v.phase.startedAt + DAY1_HUSH_MS) return false;
+  if (t.mem.flags[`asked:${id}`] === v.phase.day) return false;
+  return t.rng.chance(0.4);
 }
 
 function quietest(t: Turn): PlayerId | null {
@@ -809,7 +939,8 @@ function toLine(t: Turn, topic: Topic): Line | null {
         { kind: 'defend', target: topic.target },
       );
     case 'question': {
-      const target = topic.target ?? (t.rng.chance(0.6) ? quietest(t) : null);
+      const picked = topic.target ?? (t.rng.chance(0.6) ? quietest(t) : null);
+      const target = picked && mayPrompt(t, picked) ? picked : null;
       if (target && isAlive(v, target))
         return say(t, 'question', { t: name(target) }, { kind: 'question', target });
       return say(t, 'questionGeneric', {}, { kind: 'question' });

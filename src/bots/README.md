@@ -14,8 +14,8 @@ let bot = createBot(playerId, seed); // optional: { personality: 'hothead' }
 // At bot.wakeAt, and whenever new events arrive:
 const d = decideBot(bot, viewFor(state, bot.id, { sinceSeq: bot.seenSeq }), now);
 bot = d.bot;
-for (const s of d.speech) state = applyIntent(state, bot.id, s.intent, now).state; // chat first
-for (const i of d.intents) state = applyIntent(state, bot.id, i, now).state; // then votes, actions, ready
+for (const i of d.intents) state = applyIntent(state, bot.id, i, now).state; // votes, actions, ready
+for (const s of d.speech) state = applyIntent(state, bot.id, s.intent, now).state; // then chat
 ```
 
 ## How a bot thinks
@@ -31,6 +31,11 @@ for (const i of d.intents) state = applyIntent(state, bot.id, i, now).state; // 
   - Bots avoid repeating their own recent lines or echoing lines they just heard.
 - **Human chat** (`parse.ts`) is read best-effort: claims ("I'm the Augur, Bea is suspicious", "Augur here"), accusations ("vote Cal", "your story doesn't add up"), challenges ("Ada, are you Syndicate?"), defenses, and questions aimed at a bot. Wills in the `N1: Name - Suspicious` format are parsed too.
 - **Answering** (`brain.ts`). A bot that is spoken to answers within a few seconds, even if it has already used its lines for the phase (up to two extra). A question about its role gets a claim or a reason to hold it back (`answerRole`). "Who do you suspect?" gets its top suspect, or "no read yet". Other questions get a plain reply. An accusation gets a defense, and a counter-accusation if the bot already distrusts the accuser. Someone claiming a Town bot's unique role gets an immediate counter-claim and a callout. Claims of power roles get belief or doubt in the same phase. A question to the whole table ("Who do you all suspect?") from a person gets a few answers, not one from every bot.
+- **Table pace** (`brain.ts`, `policy.ts`). Bots play at a speed a person can follow:
+  - Chat shares one room budget: about 0.7 public lines a second at 9 seats (`roomRate`: 0.5 + 0.02 per seat, at most 0.85) over a 6 s window, counting people too. Small talk yields first, news (claims, accusations, defenses, wills) gets a little headroom and carries over into the vote, and an answer owed to a person skips the queue. Each bot also says less at big tables.
+  - Day 1 opens quietly (first lines after 2.5–5 s). Nobody puts a question to a person by name in the first 15 s of Day 1, and the room asks each person by name at most once a day.
+  - Votes come over the first half of the voting phase, bold bots first, and some bots hold out for a stronger case. Halfway through with no name gathering support, one bot puts its suspect forward and others may follow. A trial still waits for `view.trialOpensAt` (see `src/engine/README.md`).
+  - Ballots come after a few seconds. Hard evidence (a Suspicious result, a lie, shielding a Syndicate member) means guilty. Clashing claims and bad wagons split the table, leaning on how much suspicion has piled up. A hunch against a believable claim usually gets innocent. In sims about a quarter of verdicts are innocent.
 
 ## The LLM seam
 
