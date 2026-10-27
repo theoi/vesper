@@ -37,7 +37,12 @@ export default defineConfig({
     rollupOptions: { input: pageInputs() },
   },
   test: {
-    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'previews/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'scripts/**/*.test.ts',
+      'previews/**/*.test.ts',
+      'relay/src/**/*.test.ts',
+    ],
     environment: 'node',
     passWithNoTests: true,
   },

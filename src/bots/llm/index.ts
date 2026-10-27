@@ -19,13 +19,22 @@ export {
   type ChatLayerOptions,
   type ChatLimits,
   type ChatMetrics,
+  type ChatMode,
   type ChatSettings,
   type ChatState,
   type ChatStatus,
   type FallbackReason,
   type RewriteResult,
 } from './layer.ts';
-export { ANTHROPIC_VERSION, DEFAULT_MODEL, type FetchLike, type Usage } from './client.ts';
+export {
+  ANTHROPIC_VERSION,
+  DEFAULT_MODEL,
+  RELAY_PASSPHRASE_HEADER,
+  relayEndpoint,
+  type FetchLike,
+  type RelayTarget,
+  type Usage,
+} from './client.ts';
 export { buildPrompt, SYSTEM_PROMPT, type Prompt } from './prompt.ts';
 export { checkReply, cleanReply, type GuardRule } from './guard.ts';
 export {

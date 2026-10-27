@@ -153,6 +153,45 @@ describe('Claude bot chat glue', () => {
     expect(lines.some((l) => l.reason === 'invalid-key')).toBe(true);
   });
 
+  it('calls Claude through the relay with only the passphrase, and keeps it out of app state', async () => {
+    const PASS = 'placeholder-relay-passphrase';
+    const RELAY = 'https://vesper-relay.example.workers.dev';
+    const { controller: c, net, store, anthropic } = makeController();
+    const { received } = await hostWithFriend(c, net);
+    c.setClaudeKey(KEY);
+    c.setClaudeRelay(RELAY, PASS);
+    await c.testClaude();
+    expect(c.getState().claude).toMatchObject({
+      mode: 'relay',
+      ready: true,
+      hasRelay: true,
+      relayUrl: RELAY,
+      remembered: false,
+    });
+    expect(c.getState().claude.status.state).toBe('ok');
+
+    expect(c.start()).toBeNull();
+    for (let i = 0; i < 30; i++) await vi.advanceTimersByTimeAsync(1000);
+    expect(c.botTranscript().some((l) => l.source === 'claude')).toBe(true);
+    expect(anthropic.calls.length).toBeGreaterThan(1);
+    for (const call of anthropic.calls) {
+      expect(call.url).toBe(`${RELAY}/v1/messages`);
+      expect(call.headers['x-relay-passphrase']).toBe(PASS);
+      expect(call.headers['x-api-key']).toBeUndefined();
+    }
+    for (const secret of [PASS, KEY]) {
+      expect(JSON.stringify(c.getState())).not.toContain(secret);
+      expect(JSON.stringify(received)).not.toContain(secret);
+      expect(store.dump()).not.toContain(secret);
+    }
+
+    // Back to the direct key: the relay settings stay for later.
+    c.setClaudeMode('key');
+    expect(c.getState().claude).toMatchObject({ mode: 'key', ready: true, hasRelay: true });
+    c.forgetClaude();
+    expect(c.getState().claude).toMatchObject({ ready: false, hasRelay: false, hasKey: false });
+  });
+
   it('never calls Anthropic without a key', async () => {
     const { controller: c, net, anthropic } = makeController();
     await hostWithFriend(c, net);

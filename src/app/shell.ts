@@ -372,7 +372,7 @@ function gameFrame(c: AppController): Frame {
       bannerEl.textContent = b;
       bannerEl.hidden = !b;
       const cl = st.claude;
-      claudeLine.hidden = !s?.isHost || !cl.hasKey;
+      claudeLine.hidden = !s?.isHost || !cl.ready;
       claudeLine.dataset.state = cl.status.state;
       claudeLine.textContent = `Claude: ${cl.status.state} (${cl.claudeLines}/${cl.lines} lines, ${cl.callsThisGame}/${cl.maxCallsPerGame} calls)`;
       if (!s || !view) {
@@ -455,8 +455,23 @@ function gameFrame(c: AppController): Frame {
   };
 }
 
-/** Host-only Claude settings. The key input is cleared after saving; the key never enters AppState. */
+/**
+ * Host-only Claude settings: a direct key, or the host's own relay. Secret
+ * inputs are cleared after saving; the key and passphrase never enter AppState.
+ */
 function claudePanel(c: AppController): { el: HTMLElement; update(st: AppState): void } {
+  const modeKey = h('input', {
+    'data-testid': 'claude-mode-key',
+    type: 'radio',
+    name: 'claude-mode',
+    value: 'key',
+  });
+  const modeRelay = h('input', {
+    'data-testid': 'claude-mode-relay',
+    type: 'radio',
+    name: 'claude-mode',
+    value: 'relay',
+  });
   const key = h('input', {
     'data-testid': 'claude-key',
     type: 'password',
@@ -464,10 +479,25 @@ function claudePanel(c: AppController): { el: HTMLElement; update(st: AppState):
     size: 36,
     placeholder: 'Anthropic API key (sk-ant-…)',
   });
-  const remember = h('input', { 'data-testid': 'claude-remember', type: 'checkbox' });
   const save = h('button', { 'data-testid': 'claude-save', text: 'Use key' });
-  const test = h('button', { 'data-testid': 'claude-test', text: 'Test key' });
-  const forget = h('button', { 'data-testid': 'claude-forget', text: 'Forget key' });
+  const relayUrl = h('input', {
+    'data-testid': 'claude-relay-url',
+    type: 'url',
+    autocomplete: 'off',
+    size: 36,
+    placeholder: 'Relay URL (https://….workers.dev)',
+  });
+  const relayPass = h('input', {
+    'data-testid': 'claude-relay-passphrase',
+    type: 'password',
+    autocomplete: 'off',
+    size: 24,
+    placeholder: 'Relay passphrase',
+  });
+  const relaySave = h('button', { 'data-testid': 'claude-relay-save', text: 'Use relay' });
+  const remember = h('input', { 'data-testid': 'claude-remember', type: 'checkbox' });
+  const test = h('button', { 'data-testid': 'claude-test', text: 'Test' });
+  const forget = h('button', { 'data-testid': 'claude-forget', text: 'Forget' });
   const enabled = h('input', { 'data-testid': 'claude-enabled', type: 'checkbox' });
   const model = h('input', { 'data-testid': 'claude-model', size: 20 });
   const workspace = h('input', {
@@ -485,23 +515,44 @@ function claudePanel(c: AppController): { el: HTMLElement; update(st: AppState):
     void c.testClaude();
   };
   key.onkeydown = (e) => e.key === 'Enter' && save.click();
+  relaySave.onclick = () => {
+    const url = relayUrl.value.trim();
+    const pass = relayPass.value.trim();
+    if (!url || !pass) return;
+    c.setClaudeRelay(url, pass, { remember: remember.checked });
+    relayPass.value = '';
+    void c.testClaude();
+  };
+  relayPass.onkeydown = (e) => e.key === 'Enter' && relaySave.click();
+  modeKey.onchange = () => modeKey.checked && c.setClaudeMode('key');
+  modeRelay.onchange = () => modeRelay.checked && c.setClaudeMode('relay');
   test.onclick = () => void c.testClaude();
   forget.onclick = () => c.forgetClaude();
   enabled.onchange = () => c.setClaudeSettings({ enabled: enabled.checked });
   model.onchange = () => c.setClaudeSettings({ model: model.value });
   workspace.onchange = () => c.setClaudeSettings({ workspaceId: workspace.value || null });
+  const keyRow = h('div', {}, key, save, ' ', workspace);
+  const relayRow = h('div', {}, relayUrl, ' ', relayPass, relaySave);
+  const help = h('p', { class: 'muted' });
   const el = h(
     'section',
     { 'data-testid': 'claude-panel' },
     h('h2', { text: 'Claude bots (optional)' }),
+    h('div', {}, h('label', {}, modeKey, ' API key'), ' ', h('label', {}, modeRelay, ' My relay')),
+    help,
+    keyRow,
+    relayRow,
     h(
-      'p',
-      { class: 'muted' },
-      'With an Anthropic API key, bots write their chat with Claude. The key stays in this browser and goes only to Anthropic; other players never receive it.',
+      'div',
+      {},
+      h('label', {}, remember, ' Remember on this device'),
+      ' ',
+      test,
+      forget,
+      ' ',
+      h('label', {}, enabled, ' Use Claude'),
     ),
-    h('div', {}, key, save, h('label', {}, remember, ' Remember on this device')),
-    h('div', {}, test, forget, ' ', h('label', {}, enabled, ' Use Claude')),
-    h('div', {}, h('label', {}, 'Model ', model), ' ', workspace),
+    h('div', {}, h('label', {}, 'Model ', model)),
     status,
     usage,
   );
@@ -509,17 +560,29 @@ function claudePanel(c: AppController): { el: HTMLElement; update(st: AppState):
     el,
     update: (st) => {
       const cl = st.claude;
+      const relay = cl.mode === 'relay';
+      modeKey.checked = !relay;
+      modeRelay.checked = relay;
+      keyRow.hidden = relay;
+      relayRow.hidden = !relay;
+      help.textContent = relay
+        ? 'Your relay (a small Cloudflare Worker you deploy) holds the Anthropic key. This browser sends only the passphrase, and only to your relay. Setup steps are in the README.'
+        : 'Bots write their chat with Claude. The key stays in this browser and goes only to Anthropic; other players never receive it.';
       status.dataset.state = cl.status.state;
       status.textContent = `${cl.status.state}: ${cl.status.detail}`;
       key.placeholder = cl.hasKey
-        ? `Key set${cl.remembered ? ' and remembered' : ' for this session'} (hidden)`
+        ? `Key set${!relay && cl.remembered ? ' and remembered' : ' for this session'} (hidden)`
         : 'Anthropic API key (sk-ant-…)';
-      test.disabled = forget.disabled = !cl.hasKey;
+      relayPass.placeholder = cl.hasRelay
+        ? `Passphrase set${relay && cl.remembered ? ' and remembered' : ''} (hidden)`
+        : 'Relay passphrase';
+      if (document.activeElement !== relayUrl && cl.relayUrl) relayUrl.value = cl.relayUrl;
+      test.disabled = forget.disabled = !cl.ready;
       enabled.checked = cl.enabled;
       remember.checked = cl.remembered;
       if (document.activeElement !== model) model.value = cl.model;
       if (document.activeElement !== workspace) workspace.value = cl.workspaceId ?? '';
-      usage.textContent = cl.hasKey ? `Per-game budget: ${cl.maxCallsPerGame} calls.` : '';
+      usage.textContent = cl.ready ? `Per-game budget: ${cl.maxCallsPerGame} calls.` : '';
     },
   };
 }

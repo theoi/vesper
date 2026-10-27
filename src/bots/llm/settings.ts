@@ -1,6 +1,7 @@
 /**
- * Persisting the host's Claude settings. The key lives only in memory unless the
- * host asks to remember it, and then only in their own browser's storage.
+ * Persisting the host's Claude settings. The key (or the relay URL and
+ * passphrase) lives only in memory unless the host asks to remember it, and
+ * then only in their own browser's storage.
  */
 import type { ChatSettings } from './layer.ts';
 
@@ -16,6 +17,9 @@ export const STORAGE_KEYS = {
   model: 'vesper.claude.model',
   workspaceId: 'vesper.claude.workspaceId',
   enabled: 'vesper.claude.enabled',
+  mode: 'vesper.claude.mode',
+  relayUrl: 'vesper.claude.relayUrl',
+  relayPassphrase: 'vesper.claude.relayPassphrase',
 } as const;
 
 export function loadSettings(store: KeyValueStore): Partial<ChatSettings> {
@@ -28,20 +32,36 @@ export function loadSettings(store: KeyValueStore): Partial<ChatSettings> {
   if (ws) out.workspaceId = ws;
   const enabled = store.getItem(STORAGE_KEYS.enabled);
   if (enabled !== null) out.enabled = enabled !== 'false';
+  const mode = store.getItem(STORAGE_KEYS.mode);
+  if (mode === 'relay' || mode === 'key') out.mode = mode;
+  const relayUrl = store.getItem(STORAGE_KEYS.relayUrl);
+  if (relayUrl) out.relayUrl = relayUrl;
+  const relayPassphrase = store.getItem(STORAGE_KEYS.relayPassphrase);
+  if (relayPassphrase) out.relayPassphrase = relayPassphrase;
   return out;
 }
 
 /**
- * Save settings. With `rememberKey` false (the default) any stored key is
- * removed, so the key stays in memory for this session only.
+ * Save settings. Credentials in `settings` (the key, or the relay URL and
+ * passphrase) are stored only with `rememberKey`; otherwise any stored copy is
+ * removed, so they stay in memory for this session only. Fields left out of
+ * `settings` are not touched.
  */
 export function saveSettings(
   store: KeyValueStore,
   settings: Partial<ChatSettings>,
   rememberKey = false,
 ): void {
-  if (rememberKey && settings.apiKey) store.setItem(STORAGE_KEYS.apiKey, settings.apiKey);
-  else store.removeItem(STORAGE_KEYS.apiKey);
+  const credential = (k: 'apiKey' | 'relayUrl' | 'relayPassphrase') => {
+    if (!(k in settings)) return;
+    const v = settings[k];
+    if (rememberKey && v) store.setItem(STORAGE_KEYS[k], v);
+    else store.removeItem(STORAGE_KEYS[k]);
+  };
+  credential('apiKey');
+  credential('relayUrl');
+  credential('relayPassphrase');
+  if (settings.mode !== undefined) store.setItem(STORAGE_KEYS.mode, settings.mode);
   if (settings.model !== undefined) store.setItem(STORAGE_KEYS.model, settings.model);
   if (settings.workspaceId !== undefined) {
     if (settings.workspaceId) store.setItem(STORAGE_KEYS.workspaceId, settings.workspaceId);

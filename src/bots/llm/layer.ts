@@ -10,6 +10,7 @@ import {
   DEFAULT_MODEL,
   callClaude,
   redact,
+  relayEndpoint,
   type CallErrorKind,
   type CallOutcome,
   type FetchLike,
@@ -23,6 +24,7 @@ export type ChatState =
   | 'ok'
   | 'invalid-key'
   | 'browser-blocked' // a working key whose organization refuses browser requests
+  | 'relay-error' // the relay is unreachable, rejects the passphrase or this site, or lacks its secrets
   | 'rate-limited'
   | 'degraded';
 
@@ -39,6 +41,7 @@ export type FallbackReason =
   | 'off' // no key, or turned off
   | 'invalid-key'
   | 'browser-blocked' // the key's organization refuses browser requests
+  | 'relay-error' // the relay refused the request (passphrase, site, setup)
   | 'unavailable' // spend limit, missing model, or cooling down after repeated failures
   | 'rate-limited'
   | 'budget' // per-game call budget used up
@@ -65,12 +68,18 @@ export interface RewriteResult {
   usage?: Usage;
 }
 
+/** `key`: the browser calls Anthropic with the host's key. `relay`: the host's relay holds the key. */
+export type ChatMode = 'key' | 'relay';
+
 export interface ChatSettings {
   apiKey: string | null;
   model: string;
   /** Only for keys that are not scoped to one workspace. */
   workspaceId: string | null;
   enabled: boolean;
+  mode: ChatMode;
+  relayUrl: string | null;
+  relayPassphrase: string | null;
 }
 
 export interface ChatLimits {
@@ -174,6 +183,9 @@ function bump<K extends string>(rec: Partial<Record<K, number>>, k: K): void {
 export class ChatLayer {
   readonly limits: ChatLimits;
   #key: string | null;
+  #mode: ChatMode;
+  #relayUrl: string | null;
+  #relayPass: string | null;
   #model: string;
   #workspace: string | null;
   #enabled: boolean;
@@ -181,7 +193,10 @@ export class ChatLayer {
   #clock: () => number;
   #url: string | undefined;
   /** Set until the host reconfigures: a bad key, a missing model, a spend limit. */
-  #blocked: { state: 'invalid-key' | 'browser-blocked' | 'degraded'; detail: string } | null = null;
+  #blocked: {
+    state: 'invalid-key' | 'browser-blocked' | 'relay-error' | 'degraded';
+    detail: string;
+  } | null = null;
   #retryAt = 0;
   #failures = 0;
   #cooldownUntil = 0;
@@ -205,6 +220,9 @@ export class ChatLayer {
       maxTokens: opts.maxTokens ?? DEFAULT_LIMITS.maxTokens,
     };
     this.#key = normalizeKey(opts.apiKey);
+    this.#mode = opts.mode === 'relay' ? 'relay' : 'key';
+    this.#relayUrl = normalizeKey(opts.relayUrl);
+    this.#relayPass = normalizeKey(opts.relayPassphrase);
     this.#model = opts.model?.trim() || DEFAULT_MODEL;
     this.#workspace = opts.workspaceId?.trim() || null;
     this.#enabled = opts.enabled ?? true;
@@ -215,9 +233,12 @@ export class ChatLayer {
     this.#lastStatus = JSON.stringify(this.status());
   }
 
-  /** Change the key, model, workspace, or on/off switch. Clears any earlier key error. */
+  /** Change the key, relay, model, workspace, or on/off switch. Clears any earlier key error. */
   configure(patch: Partial<ChatSettings>): void {
     if (patch.apiKey !== undefined) this.#key = normalizeKey(patch.apiKey);
+    if (patch.mode !== undefined) this.#mode = patch.mode === 'relay' ? 'relay' : 'key';
+    if (patch.relayUrl !== undefined) this.#relayUrl = normalizeKey(patch.relayUrl);
+    if (patch.relayPassphrase !== undefined) this.#relayPass = normalizeKey(patch.relayPassphrase);
     if (patch.model !== undefined) this.#model = patch.model.trim() || DEFAULT_MODEL;
     if (patch.workspaceId !== undefined) this.#workspace = patch.workspaceId?.trim() || null;
     if (patch.enabled !== undefined) this.#enabled = patch.enabled;
@@ -229,14 +250,33 @@ export class ChatLayer {
     this.#emit();
   }
 
-  /** Current settings without the key itself. */
-  get settings(): { hasKey: boolean; model: string; workspaceId: string | null; enabled: boolean } {
+  /** Current settings without the key or passphrase. */
+  get settings(): {
+    hasKey: boolean;
+    model: string;
+    workspaceId: string | null;
+    enabled: boolean;
+    mode: ChatMode;
+    relayUrl: string | null;
+    hasRelay: boolean;
+    /** The current mode has what it needs to call Claude (a key, or a relay URL and passphrase). */
+    ready: boolean;
+  } {
+    const hasRelay = !!this.#relayUrl && !!this.#relayPass;
     return {
       hasKey: !!this.#key,
       model: this.#model,
       workspaceId: this.#workspace,
       enabled: this.#enabled,
+      mode: this.#mode,
+      relayUrl: this.#relayUrl,
+      hasRelay,
+      ready: this.#mode === 'relay' ? hasRelay : !!this.#key,
     };
+  }
+
+  #ready(): boolean {
+    return this.#mode === 'relay' ? !!this.#relayUrl && !!this.#relayPass : !!this.#key;
   }
 
   status(): ChatStatus {
@@ -247,8 +287,19 @@ export class ChatLayer {
       retryAt,
       model: this.#model,
     });
-    if (!this.#key) return s('off', 'No Anthropic API key. Bots use scripted chat.');
+    if (!this.#ready())
+      return s(
+        'off',
+        this.#mode === 'relay'
+          ? 'No relay set up. Bots use scripted chat.'
+          : 'No Anthropic API key. Bots use scripted chat.',
+      );
     if (!this.#enabled) return s('off', 'Claude chat is turned off. Bots use scripted chat.');
+    if (this.#mode === 'relay' && !relayEndpoint(this.#relayUrl ?? ''))
+      return s(
+        'relay-error',
+        'That relay URL is not valid. Paste the https:// address of your relay Worker.',
+      );
     if (this.#blocked) return s(this.#blocked.state, this.#blocked.detail);
     if (now < this.#retryAt)
       return s(
@@ -257,7 +308,12 @@ export class ChatLayer {
         this.#retryAt,
       );
     if (this.#failures >= FAILURES_FOR_DEGRADED || now < this.#cooldownUntil)
-      return s('degraded', 'Claude is not answering reliably. Bots use scripted chat for now.');
+      return s(
+        'degraded',
+        this.#mode === 'relay'
+          ? 'The relay is not answering reliably. Bots use scripted chat for now.'
+          : 'Claude is not answering reliably. Bots use scripted chat for now.',
+      );
     if (this.#gameCalls >= this.limits.maxCallsPerGame)
       return s('degraded', "This game's Claude budget is used up. Bots use scripted chat.");
     return s('ok', 'Bots chat with Claude.');
@@ -301,15 +357,26 @@ export class ChatLayer {
    * against the game budget. Resolves with the new status.
    */
   async check(signal?: AbortSignal): Promise<ChatStatus> {
-    if (!this.#key || !this.#enabled) return this.status();
+    if (!this.#ready() || !this.#enabled) return this.status();
     this.#blocked = null;
     this.#retryAt = 0;
     const ping = { system: 'Reply with the single word: ready', user: 'Are you there?' };
     const opts = { maxTokens: 8, budget: false };
-    const out = await this.#call(ping, this.limits.timeoutMs * 2, signal, opts);
+    let out = await this.#call(ping, this.limits.timeoutMs * 2, signal, opts);
     if (!out.ok && out.error.kind === 'bad-param') {
       this.#dropParam(out.error.param);
-      await this.#call(ping, this.limits.timeoutMs * 2, signal, opts);
+      out = await this.#call(ping, this.limits.timeoutMs * 2, signal, opts);
+    }
+    if (
+      !out.ok &&
+      this.#mode === 'relay' &&
+      (out.error.kind === 'network' || out.error.kind === 'timeout')
+    ) {
+      // A browser can't tell a wrong address from a relay without CORS headers.
+      this.#blocked = {
+        state: 'relay-error',
+        detail: `Could not reach the relay at ${hostOf(this.#relayUrl)}. Check the URL and that the Worker is deployed.`,
+      };
     }
     this.#emit();
     return this.status();
@@ -332,7 +399,7 @@ export class ChatLayer {
       return { text: scripted, source: 'scripted', reason, ...extra };
     };
     const start = this.#clock();
-    if (!this.#key || !this.#enabled) return fallback('off');
+    if (!this.#ready() || !this.#enabled) return fallback('off');
     if (this.#blocked)
       return fallback(this.#blocked.state === 'degraded' ? 'unavailable' : this.#blocked.state);
     if (start < this.#retryAt) return fallback('rate-limited');
@@ -395,8 +462,14 @@ export class ChatLayer {
     signal: AbortSignal | undefined,
     opts: { maxTokens?: number; budget?: boolean } = {},
   ): Promise<CallOutcome> {
-    const key = this.#key;
-    if (!key) return { ok: false, error: { kind: 'aborted', message: 'no key' }, ms: 0 };
+    const credential =
+      this.#mode === 'relay'
+        ? this.#relayUrl && this.#relayPass
+          ? { url: this.#relayUrl, passphrase: this.#relayPass }
+          : null
+        : this.#key;
+    if (!credential) return { ok: false, error: { kind: 'aborted', message: 'no key' }, ms: 0 };
+    const secret = typeof credential === 'string' ? credential : credential.passphrase;
     if (timeoutMs < 300)
       return { ok: false, error: { kind: 'timeout', message: 'no time left' }, ms: 0 };
     if (opts.budget !== false) {
@@ -406,7 +479,7 @@ export class ChatLayer {
     this.#metrics.calls++;
     const out = await callClaude(
       this.#fetch,
-      key,
+      credential,
       {
         model: this.#model,
         system: prompt.system,
@@ -430,14 +503,37 @@ export class ChatLayer {
     }
     const e = out.error;
     bump(this.#metrics.errors, e.kind);
+    const relay = this.#mode === 'relay';
     switch (e.kind) {
       case 'invalid-key':
         this.#blocked = {
           state: 'invalid-key',
-          detail:
-            e.status === 403
+          detail: relay
+            ? "Anthropic rejected the relay's API key. Update the relay's ANTHROPIC_API_KEY secret."
+            : e.status === 403
               ? 'This API key is not allowed to use Claude. Bots use scripted chat.'
               : 'Anthropic rejected this API key. Bots use scripted chat.',
+        };
+        break;
+      case 'relay-auth':
+        this.#blocked = {
+          state: 'relay-error',
+          detail: 'The relay rejected the passphrase. Check it and try again.',
+        };
+        break;
+      case 'relay-origin':
+        this.#blocked = {
+          state: 'relay-error',
+          detail:
+            "The relay does not accept requests from this site. Add this site's address to the relay's ALLOWED_ORIGINS.",
+        };
+        break;
+      case 'relay-config':
+        this.#blocked = {
+          state: 'relay-error',
+          detail: relayEndpoint(this.#relayUrl ?? '')
+            ? 'The relay is missing its ANTHROPIC_API_KEY or RELAY_PASSPHRASE secret.'
+            : 'That relay URL is not valid. Paste the https:// address of your relay Worker.',
         };
         break;
       case 'browser-blocked':
@@ -463,7 +559,9 @@ export class ChatLayer {
       case 'model':
         this.#blocked = {
           state: 'degraded',
-          detail: `The model "${this.#model}" is not available to this key. Pick another model.`,
+          detail: relay
+            ? `The relay does not allow the model "${this.#model}". Pick a model it allows, or add it to the relay's ALLOWED_MODELS.`
+            : `The model "${this.#model}" is not available to this key. Pick another model.`,
         };
         break;
       case 'rate-limited': {
@@ -486,7 +584,7 @@ export class ChatLayer {
         }
     }
     this.#emit();
-    return { ...out, error: { ...e, message: redact(e.message, key) } };
+    return { ...out, error: { ...e, message: redact(e.message, secret) } };
   }
 
   #resetModelParams(): void {
@@ -546,6 +644,14 @@ function normalizeKey(key: string | null | undefined): string | null {
   return k ? k : null;
 }
 
+function hostOf(url: string | null): string {
+  try {
+    return new URL(url ?? '').host;
+  } catch {
+    return 'that address';
+  }
+}
+
 function reasonFor(kind: CallErrorKind): FallbackReason {
   switch (kind) {
     case 'invalid-key':
@@ -553,6 +659,10 @@ function reasonFor(kind: CallErrorKind): FallbackReason {
       return 'invalid-key';
     case 'browser-blocked':
       return 'browser-blocked';
+    case 'relay-auth':
+    case 'relay-origin':
+    case 'relay-config':
+      return 'relay-error';
     case 'spend-limit':
     case 'model':
       return 'unavailable';
