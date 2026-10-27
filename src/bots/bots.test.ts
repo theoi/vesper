@@ -54,7 +54,14 @@ function longGame(roles: RoleId[]): Driver {
 
 describe('bot boundaries', () => {
   it('bot code never imports engine internals that expose full game state', () => {
-    const dir = join(import.meta.dirname);
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? files(join(dir, e.name))
+          : e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')
+            ? [join(dir, e.name)]
+            : [],
+      );
     const forbidden = [
       'game.ts',
       'view.ts',
@@ -65,10 +72,10 @@ describe('bot boundaries', () => {
       'setup.ts',
       'testkit.ts',
     ];
-    for (const file of readdirSync(dir).filter(
-      (f) => f.endsWith('.ts') && !f.endsWith('.test.ts'),
-    )) {
-      const src = readFileSync(join(dir, file), 'utf8');
+    const all = files(import.meta.dirname);
+    expect(all.some((f) => f.includes('/llm/'))).toBe(true);
+    for (const file of all) {
+      const src = readFileSync(file, 'utf8');
       for (const f of forbidden)
         expect(src, `${file} imports ${f}`).not.toMatch(new RegExp(`engine/${f}`));
       expect(src, `${file} mentions GameState`).not.toMatch(/\bGameState\b/);

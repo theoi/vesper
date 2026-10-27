@@ -12,7 +12,7 @@ import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { DEFAULT_TIMERS, FAST_TIMERS, ROLES, presetFor } from '../src/engine/index.ts';
-import { runGame, type SimResult } from './simcore.ts';
+import { formatTranscript, runGame, type SimResult } from './simcore.ts';
 
 interface Args {
   games: number;
@@ -228,42 +228,7 @@ function transcript(seed: number, players: number, timers: 'fast' | 'default'): 
     timers: timers === 'default' ? DEFAULT_TIMERS : FAST_TIMERS,
     keepState: true,
   });
-  const s = r.state;
-  if (!s) return '';
-  const name = (id: string | null | undefined) => s.players.find((p) => p.id === id)?.name ?? '?';
-  const lines = [`# Transcript: seed ${seed}, ${players} players`, ``];
-  lines.push(
-    `Roles: ${s.players.map((p) => `${p.name} (${ROLES[p.originalRole].name})`).join(', ')}`,
-    ``,
-  );
-  for (const e of s.log) {
-    const where = `[${e.phase} ${e.day}]`;
-    if (e.type === 'phase') lines.push(``, `## ${e.phase} ${e.day}`);
-    else if (e.type === 'chat') {
-      const who = e.from ? name(e.from) : (e.fromLabel ?? '?');
-      const ch = e.channel === 'public' ? '' : ` (${e.channel}${e.to ? ` to ${name(e.to)}` : ''})`;
-      if (e.audience === 'all' || e.channel !== 'dead' || e.from)
-        lines.push(`- **${who}**${ch}: ${e.text}`);
-    } else if (e.type === 'vote')
-      lines.push(`- ${where} ${name(e.voter)} votes ${e.target ? name(e.target) : 'nobody'}`);
-    else if (e.type === 'trial') lines.push(`- ${where} **${name(e.defendant)} is on trial**`);
-    else if (e.type === 'verdict')
-      lines.push(
-        `- ${where} verdict: ${e.guilty ? 'GUILTY' : 'innocent'} (${e.guiltyWeight}–${e.innocentWeight})`,
-      );
-    else if (e.type === 'death')
-      lines.push(
-        `- ${where} **${name(e.player)} died** (${e.causes.join(', ')}; ${e.role ? ROLES[e.role].name : 'role hidden'})`,
-      );
-    else if (e.type === 'magistrateReveal')
-      lines.push(`- ${where} ${name(e.player)} reveals as Magistrate`);
-    else if (e.type === 'gameOver')
-      lines.push(
-        ``,
-        `**Game over: ${e.result.outcome} (${e.result.reason}). Winners: ${e.result.winners.map(name).join(', ')}**`,
-      );
-  }
-  return lines.join('\n') + '\n';
+  return r.state ? formatTranscript(r.state, `Transcript: seed ${seed}, ${players} players`) : '';
 }
 
 async function main() {
