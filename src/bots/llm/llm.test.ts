@@ -522,7 +522,7 @@ describe('fallbacks', () => {
     });
     expect(layer.status().state).toBe('browser-blocked');
     expect(layer.status().detail).toBe(
-      "This key's Anthropic organization blocks browser requests (custom data retention). Use a key from an organization without custom retention.",
+      "This key's Anthropic organization blocks browser requests (custom data retention). Use your own relay (choose My relay), or a key from an organization without custom retention.",
     );
     expect(layer.metrics().errors).toEqual({ 'browser-blocked': 1 });
     expect((await layer.rewrite(view(), accuseGus)).reason).toBe('browser-blocked');

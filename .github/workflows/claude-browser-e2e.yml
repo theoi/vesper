@@ -3,7 +3,10 @@ name: Claude browser e2e
 # Manual only. Opens the LIVE site in headless Chromium, enters the
 # ANTHROPIC_API_KEY secret into the host's Claude key field, and plays a game
 # with Claude bots and one remote friend. Uploads a summary (status, call
-# counts, cost estimate, source-tagged bot transcript, audit results). The run
+# counts, cost estimate, source-tagged bot transcript, audit results). With
+# expect=browser-blocked it instead checks that a key whose organization refuses
+# browser requests gets a status naming the relay, and that the game still
+# finishes on scripted lines. The run
 # is capped by the per-game call budget (max_calls). The key is only in the
 # environment of the test step; traces are off so it can't be recorded.
 on:
@@ -19,6 +22,13 @@ on:
         description: Forward Anthropic calls through Node without Origin (for keys whose org blocks browser requests)
         type: boolean
         default: false
+      expect:
+        description: "Expected key status: ok (Claude voices bots) or browser-blocked (the key's org refuses browser requests; the game falls back to scripted lines)"
+        type: choice
+        options:
+          - ok
+          - browser-blocked
+        default: ok
 
 permissions:
   contents: read
@@ -51,6 +61,7 @@ jobs:
           E2E_BASE_URL: ${{ inputs.base_url }}
           CLAUDE_E2E_CALLS: ${{ inputs.max_calls }}
           CLAUDE_E2E_RELAY: ${{ inputs.relay && '1' || '0' }}
+          CLAUDE_E2E_EXPECT: ${{ inputs.expect }}
         run: |
           set +x
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "The ANTHROPIC_API_KEY secret is not set."; exit 1; fi
