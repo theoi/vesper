@@ -440,11 +440,39 @@ describe('fallbacks', () => {
       reason: 'invalid-key',
     });
     expect(layer.status()).toMatchObject({ state: 'invalid-key' });
+    expect(layer.status().detail).toMatch(/rejected this API key/);
     expect(seen).toContain('invalid-key');
     expect((await layer.rewrite(view(), accuseGus)).reason).toBe('invalid-key');
     expect(m.calls).toHaveLength(1);
     layer.configure({ apiKey: `${KEY}-new` });
     expect((await layer.rewrite(view(), accuseGus)).source).toBe('claude');
+  });
+
+  it('401 from an organization that blocks browser requests: says so, apart from a bad key', async () => {
+    const cors = () =>
+      apiError(
+        401,
+        'authentication_error',
+        'CORS requests are not allowed for this Organization because of custom retention settings.',
+      );
+    const m = mock((_c, n) => (n === 1 ? cors() : okReply('Gus, talk.')));
+    const layer = new ChatLayer({ apiKey: KEY, fetch: m.fetch });
+    expect(await layer.rewrite(view(), accuseGus)).toMatchObject({
+      source: 'scripted',
+      reason: 'browser-blocked',
+    });
+    expect(layer.status().state).toBe('browser-blocked');
+    expect(layer.status().detail).toBe(
+      "This key's Anthropic organization blocks browser requests (custom data retention). Use a key from an organization without custom retention.",
+    );
+    expect(layer.metrics().errors).toEqual({ 'browser-blocked': 1 });
+    expect((await layer.rewrite(view(), accuseGus)).reason).toBe('browser-blocked');
+    expect(m.calls).toHaveLength(1);
+    layer.configure({ apiKey: `${KEY}-other-org` });
+    expect((await layer.rewrite(view(), accuseGus)).source).toBe('claude');
+
+    const tester = new ChatLayer({ apiKey: KEY, fetch: mock(cors).fetch });
+    expect((await tester.check()).state).toBe('browser-blocked');
   });
 
   it('429: honors retry-after, then resumes', async () => {
