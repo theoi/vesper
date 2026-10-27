@@ -18,7 +18,7 @@ import { byName, pick, SampleBank, type PlayOptions } from '../shared/samples.ts
  */
 
 const ALL = byName(
-  import.meta.glob('../shared/samples/*.mp3', {
+  import.meta.glob('../../src/audio/samples/*.mp3', {
     eager: true,
     query: '?url',
     import: 'default',

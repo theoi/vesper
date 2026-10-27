@@ -1,0 +1,686 @@
+/* Entry screens (home, connecting, notice) and the lobby. */
+
+/* --- the lit cloth --------------------------------------------------------------- */
+
+.vx .vx-entry {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 32px 16px;
+  overflow: hidden;
+  background: #2b1c0f;
+}
+
+.vx .vx-cloth {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 60% 52% at 50% 34%,
+      rgba(255, 228, 176, 1) 0%,
+      rgba(240, 204, 140, 0.95) 28%,
+      rgba(196, 150, 86, 0.85) 55%,
+      rgba(92, 60, 28, 0.9) 82%,
+      rgba(30, 19, 9, 1) 100%
+    ),
+    #2b1c0f;
+}
+
+/* Folds in the linen and its weave. */
+.vx .vx-cloth::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(60, 38, 14, 0) 0,
+      rgba(60, 38, 14, 0.13) 7%,
+      rgba(255, 240, 210, 0.07) 11%,
+      rgba(60, 38, 14, 0) 16%
+    ),
+    repeating-linear-gradient(0deg, rgba(70, 45, 20, 0.05) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(70, 45, 20, 0.05) 0 1px, transparent 1px 3px);
+}
+
+.vx .vx-cloth::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55));
+  animation: vx-lamp 7s ease-in-out infinite alternate;
+}
+
+@keyframes vx-lamp {
+  from {
+    opacity: 0.86;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vx .vx-entry-inner {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: center;
+}
+
+.vx .vx-entry-inner > .vx-plate {
+  width: min(520px, 100%);
+}
+
+.vx .vx-entry-kicker {
+  color: rgba(30, 19, 9, 0.82);
+  font: 400 15px/1.3 var(--f-title);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+/* The title is a shadow cast on the cloth. */
+.vx .vx-title {
+  margin: -0.05em 0 0;
+  padding-left: 0.16em;
+  color: rgba(16, 10, 5, 0.9);
+  font: 700 clamp(46px, 12.5vw, 168px) / 1 var(--f-title);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 14px rgba(16, 10, 5, 0.45),
+    0 0 2px rgba(16, 10, 5, 0.6);
+  filter: blur(0.3px);
+}
+
+.vx .vx-tagline {
+  max-width: 30em;
+  margin-bottom: 18px;
+  color: rgba(28, 18, 8, 0.92);
+  font: italic 400 19px/1.45 var(--f-title);
+  text-wrap: balance;
+}
+
+.vx .vx-home-panel {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+
+.vx .vx-home-panel .vx-label {
+  color: var(--linen);
+}
+
+.vx .vx-home-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.vx .vx-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 2px;
+  color: var(--silver-dim);
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-rule::before,
+.vx .vx-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.vx .vx-join {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.vx .vx-home-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.vx .vx-entry-panel {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  width: 100%;
+}
+
+.vx .vx-entry-msg {
+  color: var(--paper);
+  font: italic 400 20px/1.4 var(--f-title);
+}
+
+.vx .vx-wait-candle {
+  width: 10px;
+  height: 46px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f4e6c8, #cdb48a);
+  position: relative;
+}
+
+.vx .vx-wait-candle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 12px;
+  height: 20px;
+  margin-left: -6px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(ellipse at 50% 70%, #fff6d8, var(--gold) 55%, rgba(233, 164, 67, 0));
+  box-shadow: 0 0 22px 8px rgba(247, 207, 120, 0.35);
+  animation: vx-flicker 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes vx-flicker {
+  from {
+    transform: scale(0.92) rotate(-2deg);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(1.05) rotate(2deg);
+    opacity: 1;
+  }
+}
+
+/* --- shared bars ---------------------------------------------------------------- */
+
+.vx .vx-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(180deg, #120e0b, #0e0b09);
+}
+
+.vx .vx-bar-fill {
+  flex: 1;
+}
+
+.vx .vx-wordmark {
+  color: var(--paper);
+  font: 700 22px/1 var(--f-title);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* --- the stage host (the stage fills it) ----------------------------------------- */
+
+.vx .vx-stage-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, #3a2a17, #120d08 75%);
+}
+
+.vx .vx-stage-host > :first-child {
+  position: absolute;
+  inset: 0;
+}
+
+/* Placeholder stage (until the real one lands): candles as name plates. */
+.vx .vx-stage-host > .stage-stub {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 24px 32px;
+  background: radial-gradient(
+    ellipse 70% 62% at 50% 38%,
+    #f0d39c,
+    #c49a5c 45%,
+    #5c3e1e 80%,
+    #1c130a
+  );
+}
+
+.vx .stage-stub button {
+  min-height: 44px;
+  padding: 0.5em 1em;
+  border: 1px solid rgba(230, 204, 154, 0.45);
+  border-radius: 999px 999px 3px 3px;
+  color: var(--paper);
+  background: rgba(14, 11, 9, 0.88);
+  font: 500 16px/1.1 var(--f-ui);
+}
+
+.vx .stage-stub button:not(:disabled) {
+  cursor: pointer;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 18px rgba(247, 207, 120, 0.55);
+}
+
+.vx .stage-stub button:disabled {
+  opacity: 1;
+}
+
+.vx .stage-stub button[data-alive='false'] {
+  color: var(--silver-dim);
+  text-decoration: line-through;
+  background: rgba(14, 11, 9, 0.6);
+}
+
+/* --- lobby ----------------------------------------------------------------------- */
+
+.vx .vx-lobby {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  height: 100vh;
+  height: 100dvh;
+}
+
+.vx .vx-lobby-stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vx .vx-stage-caption {
+  padding: 14px 20px;
+  border-top: 1px solid var(--rule);
+  color: var(--paper);
+  background: var(--ink);
+  font: italic 400 19px/1.3 var(--f-title);
+  text-align: center;
+}
+
+/* The playbill: a theatre programme printed on cream paper. */
+.vx .vx-paper {
+  --rule: rgba(40, 28, 16, 0.3);
+  color: #22180f;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 252, 240, 0.65), transparent 55%),
+    linear-gradient(180deg, #efe4cb, #e4d4b1);
+}
+
+.vx .vx-paper .tk {
+  --tk-bg: #1d1510;
+  --tk-fg: var(--paper);
+  --tk-perf: rgba(244, 236, 221, 0.35);
+}
+
+.vx .vx-paper .tk-primary {
+  --tk-bg: linear-gradient(180deg, #2a1d14, #120c08);
+  --tk-fg: var(--gold-hi);
+  --tk-perf: rgba(247, 207, 120, 0.45);
+}
+
+.vx .vx-paper .tk-ghost {
+  --tk-bg: transparent;
+  --tk-fg: #3b2a1a;
+  outline-color: rgba(40, 28, 16, 0.45);
+}
+
+.vx .vx-paper .tk-ghost:hover:not(:disabled) {
+  background: rgba(40, 28, 16, 0.08);
+}
+
+.vx .vx-paper .tk-ghost:focus-visible {
+  outline: 2px solid #3b2a1a;
+}
+
+.vx .vx-paper input:not([type]),
+.vx .vx-paper input[type='url'],
+.vx .vx-paper input[type='password'],
+.vx .vx-paper select {
+  border-color: rgba(40, 28, 16, 0.28);
+  border-bottom-color: rgba(40, 28, 16, 0.6);
+  color: #1d140c;
+  background: rgba(255, 251, 240, 0.7);
+}
+
+.vx .vx-paper input::placeholder {
+  color: #7a6850;
+}
+
+.vx .vx-paper input:focus-visible,
+.vx .vx-paper select:focus-visible {
+  outline-color: #8a5a1e;
+}
+
+.vx .vx-paper .vx-hint {
+  color: #5d4b36;
+}
+
+.vx .vx-paper .vx-error {
+  color: #8e2a26;
+}
+
+.vx .vx-playbill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 26px 28px 0;
+  overflow: auto;
+  border-left: 1px solid #000;
+  box-shadow: inset 12px 0 24px -16px rgba(0, 0, 0, 0.6);
+}
+
+.vx .vx-bill-title {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding-bottom: 16px;
+  border-bottom: 3px double rgba(40, 28, 16, 0.55);
+  text-align: center;
+}
+
+.vx .vx-bill-kicker {
+  color: #6b4f2c;
+}
+
+.vx .vx-bill-code-label {
+  margin-top: 6px;
+  color: #5d4b36;
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-room-code {
+  color: #150e08;
+  font: 700 40px/1 var(--f-title);
+  letter-spacing: 0.24em;
+  padding-left: 0.24em;
+}
+
+.vx .vx-share {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.vx .vx-room-link {
+  min-width: 0;
+  font-size: 15px !important;
+}
+
+.vx .vx-net {
+  color: #5d4b36;
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-net[data-state='open'] {
+  color: #2d5a2a;
+}
+
+.vx .vx-net[data-state='error'] {
+  color: #8e2a26;
+}
+
+.vx .vx-net:empty {
+  display: none;
+}
+
+.vx .vx-bill-section {
+  display: grid;
+  gap: 10px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.vx .vx-bill-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #3b2a1a;
+  font: 400 15px/1.2 var(--f-title);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.vx .vx-bill-head::before,
+.vx .vx-bill-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.vx .vx-seat-count {
+  letter-spacing: 0.1em;
+  color: #6b4f2c;
+}
+
+.vx .vx-seats {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: seat;
+}
+
+.vx .vx-seats li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 36px;
+  padding: 2px 0;
+  counter-increment: seat;
+}
+
+.vx .vx-seats li::before {
+  content: counter(seat, upper-roman);
+  min-width: 2.2em;
+  color: #7a6146;
+  font: italic 400 15px var(--f-title);
+}
+
+.vx .vx-seat-name {
+  font: 400 18px/1.2 var(--f-title);
+}
+
+.vx .vx-seats li.is-you .vx-seat-name {
+  font-weight: 700;
+}
+
+.vx .vx-leader {
+  flex: 1;
+  min-width: 12px;
+  border-bottom: 1px dotted rgba(40, 28, 16, 0.45);
+  transform: translateY(-4px);
+}
+
+.vx .vx-seat-tags {
+  color: #5d4b36;
+  font: italic 400 15px var(--f-title);
+}
+
+.vx .vx-seats .tk {
+  align-self: center;
+  min-height: 30px;
+  padding: 0 0.3em;
+  outline: 0;
+  color: #6b4f2c;
+  font: italic 400 15px/1 var(--f-title);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.vx .vx-seats .tk:hover {
+  color: #8e2a26;
+}
+
+.vx .vx-host-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.vx .vx-fill {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.vx .vx-preset {
+  color: #4b3a26;
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx .vx-roles li {
+  padding: 2px 10px;
+  border: 1px solid rgba(40, 28, 16, 0.3);
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+.vx .vx-validation {
+  color: #7a3a14;
+  font-size: 15px;
+}
+
+.vx .vx-validation:empty {
+  display: none;
+}
+
+.vx .vx-claude-modes,
+.vx .vx-claude-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.vx .vx-claude-row input:not([type='checkbox']) {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.vx .vx-claude-status {
+  font-size: 15px;
+  color: #4b3a26;
+}
+
+.vx .vx-claude-status[data-state='ok'] {
+  color: #2d5a2a;
+}
+
+.vx .vx-rename {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.vx .vx-bill-foot {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 8px;
+  margin: 8px -28px 0;
+  padding: 16px 28px 20px;
+  border-top: 3px double rgba(40, 28, 16, 0.55);
+  background: linear-gradient(180deg, #e8dabb, #e2d1ad);
+}
+
+.vx .vx-start {
+  min-height: 52px;
+  font-size: 16px;
+}
+
+.vx .vx-waiting {
+  color: #3b2a1a;
+  font: italic 400 18px/1.35 var(--f-title);
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .vx .vx-lobby {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .vx .vx-lobby-stage {
+    height: 46vh;
+    flex: none;
+  }
+
+  .vx .vx-bar {
+    gap: 4px;
+    padding: 6px 10px;
+  }
+
+  .vx .vx-wordmark {
+    font-size: 18px;
+    letter-spacing: 0.2em;
+  }
+
+  .vx .vx-bar .vx-volume {
+    display: none;
+  }
+
+  .vx .vx-stage-caption {
+    padding: 8px 12px;
+    font-size: 17px;
+  }
+
+  .vx .vx-playbill {
+    padding: 20px 18px 0;
+    overflow: visible;
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .vx .vx-bill-foot {
+    margin: 8px -18px 0;
+    padding: 14px 18px 18px;
+  }
+
+  .vx .vx-home-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .vx .vx-plate {
+    padding: 22px 18px;
+  }
+
+  .vx .vx-entry {
+    padding: 24px 14px;
+  }
+
+  .vx .vx-entry-kicker {
+    letter-spacing: 0.2em;
+  }
+
+  .vx .vx-tagline {
+    font-size: 17px;
+  }
+
+  .vx .vx-bar .vx-tool {
+    padding: 0.3em 0.45em;
+    letter-spacing: 0.06em;
+  }
+}
