@@ -3,7 +3,13 @@
  * it holds the full state, feeds each bot only its own view, and checks
  * invariants independently of the engine's own logic.
  */
-import { createBot, decideBot, pickBotNames, type BotState } from '../src/bots/index.ts';
+import {
+  createBot,
+  decideBot,
+  pickBotNames,
+  type BotSpeech,
+  type BotState,
+} from '../src/bots/index.ts';
 import {
   ROLES,
   applyIntent,
@@ -23,6 +29,50 @@ import {
   type RoleSlot,
   type Timers,
 } from '../src/engine/index.ts';
+
+/** Markdown transcript of a finished game; `annotate` may add lines under a chat event. */
+export function formatTranscript(
+  s: GameState,
+  title: string,
+  annotate: (e: Extract<GameEvent, { type: 'chat' }>) => string[] = () => [],
+): string {
+  const name = (id: string | null | undefined) => s.players.find((p) => p.id === id)?.name ?? '?';
+  const lines = [`# ${title}`, ``];
+  lines.push(
+    `Roles: ${s.players.map((p) => `${p.name} (${ROLES[p.originalRole].name})`).join(', ')}`,
+    ``,
+  );
+  for (const e of s.log) {
+    const where = `[${e.phase} ${e.day}]`;
+    if (e.type === 'phase') lines.push(``, `## ${e.phase} ${e.day}`);
+    else if (e.type === 'chat') {
+      const who = e.from ? name(e.from) : (e.fromLabel ?? '?');
+      const ch = e.channel === 'public' ? '' : ` (${e.channel}${e.to ? ` to ${name(e.to)}` : ''})`;
+      if (e.audience === 'all' || e.channel !== 'dead' || e.from) {
+        lines.push(`- **${who}**${ch}: ${e.text}`);
+        for (const extra of annotate(e)) lines.push(`  - ${extra}`);
+      }
+    } else if (e.type === 'vote')
+      lines.push(`- ${where} ${name(e.voter)} votes ${e.target ? name(e.target) : 'nobody'}`);
+    else if (e.type === 'trial') lines.push(`- ${where} **${name(e.defendant)} is on trial**`);
+    else if (e.type === 'verdict')
+      lines.push(
+        `- ${where} verdict: ${e.guilty ? 'GUILTY' : 'innocent'} (${e.guiltyWeight}–${e.innocentWeight})`,
+      );
+    else if (e.type === 'death')
+      lines.push(
+        `- ${where} **${name(e.player)} died** (${e.causes.join(', ')}; ${e.role ? ROLES[e.role].name : 'role hidden'})`,
+      );
+    else if (e.type === 'magistrateReveal')
+      lines.push(`- ${where} ${name(e.player)} reveals as Magistrate`);
+    else if (e.type === 'gameOver')
+      lines.push(
+        ``,
+        `**Game over: ${e.result.outcome} (${e.result.reason}). Winners: ${e.result.winners.map(name).join(', ')}**`,
+      );
+  }
+  return lines.join('\n') + '\n';
+}
 
 export interface SimOptions {
   seed: number;
@@ -236,7 +286,39 @@ function auditView(s: GameState, id: PlayerId, violations: string[]): void {
   }
 }
 
+/** A bot line about to be applied; the driver may rewrite or drop it. */
+export interface SpeechTurn {
+  botId: PlayerId;
+  speech: BotSpeech;
+  /** Full state at this moment (the referee's; build the bot's view from it). */
+  state: GameState;
+  now: number;
+}
+
+/** Bot-only game with scripted chat. */
 export function runGame(opts: SimOptions): SimResult {
+  const game = playGame(opts);
+  let step = game.next();
+  while (!step.done) step = game.next(step.value.speech.intent);
+  return step.value;
+}
+
+/** Bot-only game whose lines pass through `voice` (e.g. the Claude chat layer). */
+export async function runGameAsync(
+  opts: SimOptions,
+  voice: (turn: SpeechTurn) => Promise<Intent | null>,
+): Promise<SimResult> {
+  const game = playGame(opts);
+  let step = game.next();
+  while (!step.done) step = game.next(await voice(step.value));
+  return step.value;
+}
+
+/**
+ * Plays one game, yielding each bot line before it is applied. Send back the
+ * intent to apply (the scripted one, a rewritten copy, or null to drop it).
+ */
+export function* playGame(opts: SimOptions): Generator<SpeechTurn, SimResult, Intent | null> {
   const timers = opts.timers ?? FAST_TIMERS;
   const names = pickBotNames(opts.players, opts.seed);
   const players = names.map((name, i) => ({ id: `b${i}`, name, isBot: true }));
@@ -291,7 +373,10 @@ export function runGame(opts: SimOptions): SimResult {
         botCalls++;
         bots.set(p.id, d.bot);
         const seqBefore = state.seq;
-        for (const s of d.speech) apply(p.id, s.intent);
+        for (const s of d.speech) {
+          const intent = yield { botId: p.id, speech: s, state, now };
+          if (intent) apply(p.id, intent);
+        }
         for (const intent of d.intents) apply(p.id, intent);
         if (state.seq !== seqBefore) any = true;
       }

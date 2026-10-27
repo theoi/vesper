@@ -1,0 +1,80 @@
+name: Claude bots
+
+# Manual only. Plays a few headless games where bot chat goes through Claude,
+# then uploads transcripts and metrics (latency, fallbacks, guardrail
+# rejections, tokens, estimated cost). Uses the ANTHROPIC_API_KEY repository
+# secret, which only the "Play" step can see. The run is capped by calls and by
+# estimated spend.
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: Games to play
+        default: '3'
+      players:
+        description: Player count range, e.g. 7-9
+        default: '7-9'
+      seed:
+        description: First game seed
+        default: '500'
+      max_calls:
+        description: Hard cap on API calls for the whole run
+        default: '400'
+      max_cost:
+        description: Hard cap on estimated spend for the whole run, in USD
+        default: '0.50'
+      model:
+        description: Claude model
+        default: claude-haiku-5-5
+      timeout_ms:
+        description: Per-line timeout before a bot falls back to scripted chat
+        default: '4000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-bots
+  cancel-in-progress: false
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Install before the key is in any environment, so no install script can read it.
+      - run: npm ci
+      - name: Play
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          GAMES: ${{ inputs.games }}
+          PLAYERS: ${{ inputs.players }}
+          SEED: ${{ inputs.seed }}
+          MAX_CALLS: ${{ inputs.max_calls }}
+          MAX_COST: ${{ inputs.max_cost }}
+          MODEL: ${{ inputs.model }}
+          TIMEOUT_MS: ${{ inputs.timeout_ms }}
+        run: |
+          set +x
+          node scripts/claude-sim.ts --games "$GAMES" --players "$PLAYERS" --seed "$SEED" \
+            --max-calls "$MAX_CALLS" --max-cost "$MAX_COST" --model "$MODEL" \
+            --timeout "$TIMEOUT_MS" --out claude-out
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f claude-out/report.md ]; then cat claude-out/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: claude-bots-${{ github.run_id }}
+          path: claude-out
+          if-no-files-found: warn
+          retention-days: 30

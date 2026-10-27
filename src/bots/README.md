@@ -34,3 +34,42 @@ for (const i of d.intents) state = applyIntent(state, bot.id, i, now).state; // 
 ## The LLM seam
 
 Each `BotSpeech` carries `intent` (scripted text, ready to apply), `act` (a `SpeechAct`: the structured meaning, also sent as `intent.meta`), `category` (the template kind), and `personality`. A chat layer may rewrite only `intent.text`, using the act, category, personality voice, and the bot's own view. Decisions never depend on the text, so a failed or slow LLM call can always fall back to the scripted line.
+
+## Claude chat (`llm/`)
+
+`src/bots/llm/` is that chat layer. It calls the Anthropic Messages API straight from the host's browser with the key the host enters, and it is the only code in this folder that touches the network (through an injectable `fetch`).
+
+```ts
+import { ChatLayer, loadSettings, saveSettings, voiceSpeech } from '../bots/llm/index.ts';
+
+const chat = new ChatLayer(loadSettings(localStorage)); // key, model, on/off
+chat.subscribe((s) => showClaudeStatus(s.state, s.detail)); // off | ok | invalid-key | rate-limited | degraded
+chat.configure({ apiKey, model: 'claude-haiku-5-5', enabled: true }); // from the settings screen
+saveSettings(localStorage, { apiKey, model }, rememberKey); // the key is stored only if the host asks
+await chat.check(); // optional "Test key" button: one tiny request
+
+chat.newGame(); // resets the per-game call budget
+// For each bot line (apply votes and actions right away; lines may arrive a little later):
+const { speech } = await voiceSpeech(chat, viewFor(state, bot.id), d.speech[i]);
+applyIntent(state, bot.id, speech.intent, Date.now()); // drop it if the engine rejects it (phase moved on)
+```
+
+- **Never breaks the game.** `rewrite` always resolves. Without a key, with a bad key, on a rate limit, timeout (4 s by default, queueing included), network or server error, refusal, spent budget, or guardrail rejection, it returns the scripted text and a `reason`.
+- **Status.** 401/403 or a key that needs a workspace → `invalid-key` and no more calls until the key changes. 429 → `rate-limited` until `retry-after`. A spend limit or a missing model → `degraded` with a plain explanation. Three failures in a row → `degraded`; five → a 30 s cool-down. A success returns to `ok`.
+- **Limits.** 220 calls per game, 3 in flight, 45 per minute. Low-value lines (greetings, banter) are skipped first when the budget or rate runs low.
+- **Prompt.** A static system prompt (game rules, this game's role names, style rules; cached by the API) plus a per-line message built only from the bot's own `PlayerView`: persona and quirks, its role, partners if Syndicate, its own night results, its public story, the public situation and claims, the last 14 chat lines and events it can see, the line's purpose (from the act), and the scripted draft. Player chat is wrapped in `<chat>` and flattened so it cannot pose as instructions.
+- **Guardrails** (`guard.ts`). Replies are cleaned (first line, no labels, quotes, markdown, stage directions, emojis; cut at a sentence end under 200 characters) and rejected when they drop the act's target, role, or results; name players nobody mentioned; point accusations somewhere new; name a living Syndicate partner or hint at the team in public; claim a role the line does not claim; admit to being Syndicate; mention AI, prompts, or drafts; use another game's role names; or out the Mourner in the dead chat.
+- **Key.** Held in memory (a private field), sent only in the `x-api-key` header to `api.anthropic.com`, never in status, metrics, or errors, and written to storage only when the host opts in.
+- **Model.** `claude-haiku-5-5` by default, with `output_config.effort: "low"` and thinking disabled. Another model can be chosen; a model that rejects either parameter gets it dropped automatically.
+
+### Real-Claude runs
+
+`scripts/claude-sim.ts` plays headless games through the layer, with one seat acting as a human stand-in that asks bots questions, accuses them, and tries to break them. It writes transcripts (each line with its draft and how it was produced), `lines.jsonl`, `metrics.json`, and `report.md`.
+
+```sh
+node scripts/claude-sim.ts --dry-run --games 2 --dump-prompts 50 --out out   # offline; dumps prompts
+node scripts/claude-sim.ts --replies replies.json --games 4 --parallel 1 --out out   # stand-in replies
+ANTHROPIC_API_KEY=... node scripts/claude-sim.ts --games 3 --out out   # live
+```
+
+The **Claude bots** workflow (`.github/workflows/claude-bots.yml`, manual only) runs the live mode with the `ANTHROPIC_API_KEY` repository secret, caps the run by calls and estimated spend, and uploads the output as an artifact.
