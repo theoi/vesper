@@ -656,7 +656,7 @@
 
 .vs-k {
   margin-bottom: 0.35em;
-  font: 400 clamp(11px, 0.95cqw, 15px) / 1.2 var(--st-type);
+  font: 400 clamp(15px, 1.1cqw, 17px) / 1.2 var(--st-type);
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: rgba(222, 216, 205, 0.72);
@@ -673,7 +673,7 @@
     radial-gradient(ellipse at 30% 20%, rgba(255, 250, 235, 0.9), transparent 70%),
     linear-gradient(170deg, #efe2c4, #d9c49b);
   color: #2b1d10;
-  font: 400 clamp(13px, 1.25cqw, 19px) / 1.8 var(--st-hand);
+  font: 400 clamp(15px, 1.3cqw, 20px) / 1.8 var(--st-hand);
   box-shadow: 0 1.6cqh 3cqh rgba(0, 0, 0, 0.5);
   clip-path: polygon(
     0 3%,
@@ -719,7 +719,7 @@
 
 .vs-letter-title {
   margin-bottom: 0.6em;
-  font: 400 0.66em var(--st-type);
+  font: 400 15px var(--st-type);
   letter-spacing: 0.3em;
   text-transform: uppercase;
   color: #6d3a12;
@@ -773,8 +773,8 @@
   right: 0;
   bottom: 9px;
   text-align: center;
-  font: 400 clamp(11px, 0.95cqw, 15px) / 1 var(--st-type);
-  letter-spacing: 0.3em;
+  font: 400 15px / 1 var(--st-type);
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--paper);
 }
@@ -1293,8 +1293,8 @@
   right: 14px;
   bottom: calc(var(--floor) + 10px);
   z-index: 7;
-  font: italic 400 14px / 1 var(--st-type);
-  color: rgba(242, 238, 230, 0.6);
+  font: italic 400 15px / 1 var(--st-type);
+  color: rgba(242, 238, 230, 0.7);
   text-shadow: 0 0 6px #000;
   pointer-events: none;
 }
@@ -1390,7 +1390,7 @@
   width: min(70cqw, 560px);
   transform: translateX(-50%);
   color: rgba(232, 236, 255, 0.92);
-  font: 400 clamp(14px, 3.2cqh, 24px) / 1.5 var(--st-hand);
+  font: 400 clamp(15px, 3.2cqh, 24px) / 1.5 var(--st-hand);
   text-align: center;
   text-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
   opacity: 0;

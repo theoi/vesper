@@ -3,6 +3,7 @@
  * choices (which sequence, which variant) can be tested without a DOM.
  */
 import { parseLine } from '../../bots/parse.ts';
+import { SAVED_BY } from '../../content/index.ts';
 import {
   ROLES,
   type DeathCause,
@@ -220,7 +221,7 @@ export function noteFor(r: NightResult, name: (id: PlayerId) => string): Note | 
     case 'blocked':
       return { text: 'Someone kept you home', tone: 'neutral' };
     case 'attackedSurvived':
-      return { text: 'A hand closed around your candle', tone: 'town' };
+      return { text: `Attacked in the night, but ${SAVED_BY[r.savedBy]}`, tone: 'town' };
     case 'patientAttacked':
       return r.saved
         ? { text: `${name(r.target)} was attacked, and lived`, tone: 'town' }

@@ -1,32 +1,10 @@
 import { nameOf, roleName } from '../../app/format.ts';
-import {
-  FACTIONS,
-  ROLES,
-  type GameResult,
-  type NightRecord,
-  type PlayerView,
-} from '../../engine/index.ts';
-import { fill } from '../../content/index.ts';
+import { FACTIONS, ROLES, type NightRecord, type PlayerView } from '../../engine/index.ts';
+import { OUTCOME_HEADLINE, RESULT_REASON } from '../../content/index.ts';
 import type { SessionSnapshot } from '../../net/index.ts';
 import { deathsLine, describeAction, nightsOf } from '../director/history.ts';
 import { h, show, ticket } from '../dom.ts';
 import type { UiContext } from '../screens/context.ts';
-
-const HEADLINE: Record<GameResult['outcome'], string> = {
-  town: fill('The {town} prevails'),
-  mafia: fill('The {mafia} prevails'),
-  cutthroat: fill('The {cutthroat} stands alone'),
-  draw: 'A draw',
-};
-
-const REASON: Record<GameResult['reason'], string> = {
-  threatsEliminated: 'Every threat to the town is gone.',
-  mafiaParity: fill('The {mafia} has the numbers now.'),
-  lastKillerStanding: 'One killer is left standing.',
-  allDead: 'Nobody is left alive.',
-  stalemate: 'Three quiet days and nights in a row.',
-  dayLimit: 'The town ran out of days.',
-};
 
 /** The curtain call: outcome, winners, the full cast with every role, and what really happened. */
 export function createResult(
@@ -73,8 +51,8 @@ export function createResult(
       const youWon = winners.has(view.you.id);
       body.replaceChildren(
         h('p', { class: 'vx-bill-kicker', text: 'Curtain call' }),
-        h('h2', { class: 'vx-curtain-head', text: HEADLINE[r.outcome] }),
-        h('p', { class: 'vx-curtain-reason', text: REASON[r.reason] }),
+        h('h2', { class: 'vx-curtain-head', text: OUTCOME_HEADLINE[r.outcome] }),
+        h('p', { class: 'vx-curtain-reason', text: RESULT_REASON[r.reason] }),
         h('p', {
           class: `vx-curtain-you ${youWon ? 'is-won' : 'is-lost'}`,
           text: youWon ? 'You are among the winners.' : 'You did not win this time.',
