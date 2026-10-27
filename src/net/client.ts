@@ -7,6 +7,7 @@ import {
   type HostMessage,
 } from './protocol.ts';
 import { Store, mergeView, type GameSession, type SessionSnapshot } from './session.ts';
+import { backgroundTimers, type TimerApi } from './timers.ts';
 import { NetError, toNetError, type ClientTransport, type Transport } from './transport.ts';
 
 export interface ClientOptions {
@@ -17,6 +18,8 @@ export interface ClientOptions {
   token?: string;
   /** Called with every message received from the host (tests and debugging). */
   onReceive?: (msg: HostMessage) => void;
+  /** Timer source for heartbeats. Defaults to worker timers that keep running in hidden tabs. */
+  timers?: TimerApi;
 }
 
 const CONNECT_TIMEOUT_MS = 20_000;
@@ -62,7 +65,8 @@ export class ClientSession implements GameSession {
   private terminal = false;
   private joined = false;
   private lastHeard = 0;
-  private pinger: ReturnType<typeof setInterval> | null = null;
+  private pinger: number | null = null;
+  private readonly timers: TimerApi;
   private welcomeTimer: ReturnType<typeof setTimeout> | null = null;
   private nextId = 1;
   private name: string;
@@ -70,6 +74,7 @@ export class ClientSession implements GameSession {
   constructor(opts: ClientOptions) {
     this.opts = opts;
     this.name = opts.name;
+    this.timers = opts.timers ?? backgroundTimers();
     this.store = new Store({
       isHost: false,
       status: 'connecting',
@@ -205,7 +210,11 @@ export class ClientSession implements GameSession {
 
   private startPing(): void {
     this.stopPing();
-    this.pinger = setInterval(() => {
+    // Worker timers: a throttled hidden tab would otherwise go quiet long enough
+    // for the host to drop it.
+    this.pinger = this.timers.setTimeout(() => {
+      this.pinger = null;
+      if (this.terminal) return;
       if (Date.now() - this.lastHeard > HOST_SILENCE_MS) {
         const t = this.transport;
         this.transport = null;
@@ -214,11 +223,12 @@ export class ClientSession implements GameSession {
         return;
       }
       this.send({ t: 'ping', at: Date.now() });
+      this.startPing();
     }, PING_MS);
   }
 
   private stopPing(): void {
-    if (this.pinger) clearInterval(this.pinger);
+    if (this.pinger !== null) this.timers.clearTimeout(this.pinger);
     this.pinger = null;
   }
 
