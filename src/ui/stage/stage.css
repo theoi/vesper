@@ -1194,6 +1194,12 @@
   }
 }
 
+/* --- software rendering: a stiller stage ----------------------------------------- */
+
+.vs-stage.lite .sh-in {
+  animation: none;
+}
+
 /* --- reduced motion -------------------------------------------------------------- */
 
 .vs-stage.rm .sh-in,
