@@ -11,7 +11,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-investigative',
     win: 'town',
-    flavor: "Reads the smoke over a stranger's chimney and knows what burns inside.",
+    flavor: "Reads the shape a stranger's shadow makes and knows whether it hides something.",
     summary:
       'Each night, study one player and learn whether they read Suspicious or Clear. The Patron reads Clear; anyone a Slanderer marked tonight reads Suspicious.',
     goal: TOWN_GOAL,
@@ -27,7 +27,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-investigative',
     win: 'town',
-    flavor: 'Keeps the street lamps burning and sees every caller who comes and goes.',
+    flavor: 'Keeps a street lamp lit by one door, and sees every shadow that stops there.',
     summary: "Each night, watch another player's door and learn who visited them.",
     goal: TOWN_GOAL,
     night: { kind: 'watch', target: 'other', visits: true },
@@ -42,7 +42,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-protective',
     win: 'town',
-    flavor: 'Thread, salve, and sheer stubbornness.',
+    flavor: 'Sits up all night by one candle so that it does not go out.',
     summary:
       'Each night, tend one player: they survive any attack tonight. You learn if they were attacked. You may tend yourself once.',
     goal: TOWN_GOAL,
@@ -58,7 +58,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-protective',
     win: 'town',
-    flavor: "Stands in the doorway so that someone else doesn't have to.",
+    flavor: 'Stands in the doorway so the lamp behind them keeps burning.',
     summary:
       'Each night, guard another player. The first attacker to reach them meets you instead: you fight, the attacker dies, and so do you unless someone tends you.',
     goal: TOWN_GOAL,
@@ -74,7 +74,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-killing',
     win: 'town',
-    flavor: 'Keeps a ledger of wrongs and two bullets to settle it.',
+    flavor: 'Two shots, two flashes, and a ledger of wrongs to settle.',
     summary:
       'From Night 2, shoot one player at night. You have two bullets. If you shoot a Town member, guilt makes you put the gun down for good.',
     goal: TOWN_GOAL,
@@ -90,7 +90,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-support',
     win: 'town',
-    flavor: 'So captivating that nobody around her gets anything done.',
+    flavor: 'Whoever turns toward that light forgets what they came to do.',
     summary:
       'Each night, captivate another player so that their night action fails. Beware: a Cutthroat you visit kills you instead of its target.',
     goal: TOWN_GOAL,
@@ -106,7 +106,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-support',
     win: 'town',
-    flavor: 'Wears the chain of office under a plain grey coat.',
+    flavor: 'Wears the chain of office under a plain grey coat, until it catches the light.',
     summary:
       'Once, during the day, reveal yourself to everyone. From then on your nomination votes and ballots count three times.',
     goal: TOWN_GOAL,
@@ -122,7 +122,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-support',
     win: 'town',
-    flavor: 'Still sets a place at the table for those who are gone.',
+    flavor: 'Still sets a candle for those who are gone, and after dark they answer.',
     summary:
       'At night you can speak with the dead and hear them. They see you only as "the Mourner".',
     goal: TOWN_GOAL,
@@ -138,7 +138,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'town',
     category: 'town-vanilla',
     win: 'town',
-    flavor: 'Ordinary, observant, and very hard to fool.',
+    flavor: 'No lamp, no secret, just a good eye for a shadow out of place.',
     summary: 'No night ability. Your voice and your vote are your weapons.',
     goal: TOWN_GOAL,
     defense: 0,
@@ -152,7 +152,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'mafia',
     category: 'mafia-leader',
     win: 'mafia',
-    flavor: 'Never raises his voice. Never needs to.',
+    flavor: 'Never steps into the light. Never needs to.',
     summary:
       'Each night, order the Syndicate kill; the Hatchet carries it out, or you do if no Hatchet lives. You read Clear to an Augur and survive basic attacks.',
     goal: MAFIA_GOAL,
@@ -168,7 +168,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'mafia',
     category: 'mafia-killing',
     win: 'mafia',
-    flavor: 'Does the work. Asks no questions. Sleeps fine.',
+    flavor: 'Does the work in the dark and is home before the lamps go out.',
     summary:
       "Carry out the Syndicate kill each night. The Patron's order wins; without one, your own pick stands.",
     goal: MAFIA_GOAL,
@@ -184,7 +184,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'mafia',
     category: 'mafia-support',
     win: 'mafia',
-    flavor: 'One smile across the room, and your whole evening is gone.',
+    flavor: 'One smile across a dim room, and your whole evening is gone.',
     summary:
       'Each night, lure away a non-Syndicate player so that their night action fails. A Cutthroat you visit kills you instead.',
     goal: MAFIA_GOAL,
@@ -200,7 +200,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'mafia',
     category: 'mafia-support',
     win: 'mafia',
-    flavor: 'A rumor at dusk is a fact by dawn.',
+    flavor: "Paints a stranger's shadow on someone else's wall.",
     summary:
       'Each night, mark a non-Syndicate player. If an Augur studies them tonight, they read Suspicious.',
     goal: MAFIA_GOAL,
@@ -216,7 +216,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'mafia',
     category: 'mafia-support',
     win: 'mafia',
-    flavor: 'Leaves nothing behind but a very tidy coffin.',
+    flavor: 'Lays out the body, closes the lid, and keeps the last letter.',
     summary:
       'Twice per game, prepare a non-Syndicate player. If they die tonight, their role and will stay hidden from the town; only you learn them.',
     goal: MAFIA_GOAL,
@@ -232,7 +232,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'neutral',
     category: 'neutral-evil',
     win: 'harlequin',
-    flavor: 'Wants the noose more than anyone wants to give it.',
+    flavor: 'Wants the lamp turned on them more than anyone wants to turn it.',
     summary: 'No night ability. Act guilty enough that the town votes to execute you.',
     goal: 'Get yourself executed.',
     defense: 0,
@@ -246,7 +246,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'neutral',
     category: 'neutral-evil',
     win: 'accuser',
-    flavor: "Has one name in mind and won't let it go.",
+    flavor: 'Keeps one name on their lips and one shadow in sight.',
     summary:
       'You are given a Town player. Get them executed while you are alive. If they die any other way, you become a Harlequin.',
     goal: 'Get your target executed by the town.',
@@ -261,7 +261,7 @@ export const ROLES: Record<RoleId, RoleDef> = {
     faction: 'neutral',
     category: 'neutral-killing',
     win: 'cutthroat',
-    flavor: 'The streets go very quiet when it is out.',
+    flavor: 'When it is out, the street lamps seem to burn lower.',
     summary:
       'Kill one player each night; your blade cuts through night defense and armor (only a Mender or Sentinel can stop it). You survive basic attacks, and anyone who tries to distract you becomes your victim instead.',
     goal: 'Be the last killer standing.',

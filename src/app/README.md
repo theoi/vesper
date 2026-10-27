@@ -14,7 +14,7 @@ Owner: platform and online play agent (for now). The art and sound agent replace
   - `controller.host` is the `HostSession` when this browser hosts, else null.
 - `shell.ts`: a plain DOM renderer over the controller. It is a placeholder: swap `mountShell` for the real UI and keep the controller.
 - `format.ts`: plain-text helpers (phase labels, event descriptions, role names).
-- `main.ts`: boot. Builds the controller, mounts the shell, handles `?room=` links (a remembered name rejoins automatically), and keeps the hosted room resumable. It saves the room to `sessionStorage` every 5 s and when the tab is hidden. On `pagehide` it suspends the room without ending it. On boot it resumes a saved room before anything else. The Leave button still ends the room for everyone.
+- `main.ts`: boot. Builds the controller, mounts the UI, handles `?room=` links (a remembered name rejoins automatically), and keeps the hosted room resumable. It saves the room to `sessionStorage` every 5 s and when the tab is hidden. On `pagehide` it suspends the room without ending it. On boot it resumes a saved room before anything else. The Leave button still ends the room for everyone.
 
 ## Reading a session snapshot
 
@@ -34,6 +34,7 @@ E2E tests drive the UI through these. Keep them when restyling (or update `tests
 - `window.__vesper`: the `AppController`. With `localStorage['vesper.netlog'] = '1'`, `window.__vesper.netLog` records every message received from the host.
 - `?net=peerjs` or `?net=trystero-nostr` forces one transport (default: PeerJS with Trystero fallback).
 - `?claudeCalls=N` lowers the per-game Claude call budget (cost control for tests).
+- `?ui=v2` mounts the new UI: `src/ui/index.ts` must export `mountUi(root, controller)` returning a dispose function, the same shape as `mountShell`. It loads as its own chunk; if it is missing or fails to load, the page logs it and shows the shell. `?ui=shell` or no parameter mounts the placeholder shell. `<html data-ui>` says which UI is mounted (`v2` or `shell`).
 
 `data-testid` hooks:
 
