@@ -30,6 +30,8 @@ export class Film {
   private readonly grain: { draw(amount: number): void; clear(): void };
   private live: { el: HTMLElement; closes: Close[] } | null = null;
   private hideTimer = 0;
+  /** Called when a shot starts, so the stage keeps drawing grain over it. */
+  onChange: () => void = () => {};
 
   constructor() {
     this.el = div('vs-film');
@@ -52,6 +54,7 @@ export class Film {
     this.shotHost.append(el);
     this.el.classList.add('on');
     this.live = { el, closes };
+    this.onChange();
     return el;
   }
 
@@ -122,11 +125,14 @@ export class Film {
     }, ms);
   }
 
-  /** Reduced motion: no grain, dust, scratches or exposure flicker. */
+  /** Reduced motion or software rendering: no grain, dust, scratches or exposure flicker. */
   calm = false;
 
-  draw(): void {
-    if (this.live && !this.calm) this.grain.draw(1);
+  /** Draw grain over a live shot. Returns whether more frames are wanted. */
+  draw(): boolean {
+    if (!this.live || this.calm) return false;
+    this.grain.draw(1);
+    return true;
   }
 
   dispose(): void {

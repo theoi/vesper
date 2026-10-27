@@ -222,6 +222,7 @@ class Director implements DirectorApi {
     this.take = t;
     s.hold(true);
     s.el.classList.add('playing');
+    s.el.dataset.sequence = q.id;
     runSequence(t, s, this.audio, q)
       .catch((e: unknown) => {
         if (!(e instanceof Skip)) console.error('Sequence failed', q.id, e);
@@ -233,6 +234,7 @@ class Director implements DirectorApi {
         s.clearOver();
         s.hold(false);
         s.el.classList.remove('playing');
+        delete s.el.dataset.sequence;
         this.take = null;
         s.settle(t.skipped ? 300 : 900);
         s.restLook(t.skipped ? 400 : 1200);

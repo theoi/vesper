@@ -137,11 +137,18 @@ class ScrimStage implements Stage {
   private lastPhase = '';
   private handEl: HTMLElement | null = null;
   private handTimer = 0;
+  private readonly resize: ResizeObserver;
+  private clothAt = 0;
+  private gfxPinned = false;
+  /** Frame pacing while the stage animates, to notice a machine too slow for the full cloth. */
+  private pace = { last: 0, n: 0, sum: 0 };
+  private disposed = false;
   reduced = false;
   view: PlayerView | null = null;
 
   constructor(private readonly audio: GameAudio) {
     this.el = div('vs-stage');
+    this.el.dataset.testid = 'stage';
     const canvas = document.createElement('canvas');
     canvas.className = 'vs-cloth';
     this.cloth = new Cloth(canvas, FLOOR);
@@ -168,18 +175,14 @@ class ScrimStage implements Stage {
       if (t.closest('button, a, input, textarea, select')) return;
       this.skipCb();
     });
+    this.cloth.onChange = this.kick;
+    this.film.onChange = this.kick;
+    this.resize = new ResizeObserver(() => this.cloth.touch());
+    this.resize.observe(canvas);
+    const gfx = new URLSearchParams(location.search).get('gfx');
+    this.gfxPinned = gfx === 'lite' || gfx === 'full';
+    this.setLite(gfx === 'lite' || (gfx !== 'full' && this.cloth.lite));
     this.cloth.look('lobby', 0);
-    let clothAt = 0;
-    const loop = (now: number) => {
-      this.raf = requestAnimationFrame(loop);
-      // The cloth flickers like film: about 30 frames a second is plenty and halves the GPU cost.
-      if (now - clothAt >= 30) {
-        clothAt = now;
-        this.cloth.render(now, 0.6);
-      }
-      this.film.draw();
-    };
-    this.raf = requestAnimationFrame(loop);
     // Warm the cache so close-ups and poses never pop in mid-sequence.
     const warm = () => {
       for (const url of allArtUrls()) {
@@ -190,6 +193,57 @@ class ScrimStage implements Stage {
     };
     if ('requestIdleCallback' in window) requestIdleCallback(warm);
     else setTimeout(warm, 800);
+  }
+
+  // --- drawing: on demand --------------------------------------------------------
+
+  /** Ask for frames; the loop stops by itself once nothing on the stage changes. */
+  private readonly kick = (): void => {
+    if (!this.raf && !this.disposed) this.raf = requestAnimationFrame(this.loop);
+  };
+
+  private readonly loop = (now: number): void => {
+    this.raf = 0;
+    const lite = this.cloth.lite;
+    // Ambient flicker needs no more than 30 frames a second; software rendering gets 15.
+    if (now - this.clothAt >= (lite ? 64 : 31)) {
+      if (this.cloth.render(now, lite ? 0.34 : 0.6)) this.clothAt = now;
+    }
+    const grain = this.film.draw();
+    this.measurePace(now);
+    if (grain || this.cloth.wantsFrame()) this.raf = requestAnimationFrame(this.loop);
+  };
+
+  /**
+   * When frames arrive slowly while the stage animates (a weak GPU, or software compositing
+   * the renderer string does not reveal), switch to the lite cloth for the rest of the game.
+   */
+  private measurePace(now: number): void {
+    const p = this.pace;
+    const gap = now - p.last;
+    p.last = now;
+    if (this.gfxPinned || this.cloth.lite || document.hidden) return;
+    if (gap > 250) {
+      p.n = 0;
+      p.sum = 0;
+      return;
+    }
+    p.n += 1;
+    p.sum += gap;
+    if (p.n >= 90) {
+      if (p.sum / p.n > 42) this.setLite(true);
+      p.n = 0;
+      p.sum = 0;
+    }
+  }
+
+  private setLite(on: boolean): void {
+    this.cloth.lite = on;
+    this.film.calm = this.reduced || on;
+    if (on) this.film.clearGrain();
+    this.el.classList.toggle('lite', on);
+    this.el.dataset.gfx = on ? 'lite' : 'full';
+    this.cloth.touch();
   }
 
   // --- cast -----------------------------------------------------------------------
@@ -386,8 +440,9 @@ class ScrimStage implements Stage {
   setReducedMotion(on: boolean): void {
     this.reduced = on;
     this.cloth.calm = on;
-    this.film.calm = on;
+    this.film.calm = on || this.cloth.lite;
     if (on) this.film.clearGrain();
+    this.cloth.touch();
     this.el.classList.toggle('rm', on);
   }
 
@@ -828,7 +883,9 @@ class ScrimStage implements Stage {
   }
 
   dispose(): void {
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
+    this.resize.disconnect();
     window.clearTimeout(this.handTimer);
     for (const t of this.walkTimers.values()) window.clearTimeout(t);
     this.insetClose?.c.p.dispose();
