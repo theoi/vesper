@@ -27,6 +27,11 @@ const CALLS = Math.max(10, Math.min(200, Number(process.env.CLAUDE_E2E_CALLS ?? 
 const OUT = 'test-results/claude';
 /** Opt-in workaround; see the route below. The evidence must say when it was used. */
 const RELAY = process.env.CLAUDE_E2E_RELAY === '1';
+/**
+ * For a key whose organization refuses browser requests: the host must see why, with the
+ * relay as the way out, and the game must still finish on scripted lines.
+ */
+const EXPECT_BLOCKED = process.env.CLAUDE_E2E_EXPECT === 'browser-blocked';
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': '*',
@@ -42,7 +47,11 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
   const host = await openPlayer(browser, 'Hana', NO_SW);
   const friend = await openPlayer(browser, 'Ari', NO_SW);
   const players: Player[] = [host, friend];
-  const summary: Record<string, unknown> = { callCap: CALLS, relay: RELAY };
+  const summary: Record<string, unknown> = {
+    callCap: CALLS,
+    relay: RELAY,
+    expect: EXPECT_BLOCKED ? 'browser-blocked' : 'ok',
+  };
   try {
     const code = await hostRoom(host, { params: { claudeCalls: String(CALLS) } });
 
@@ -104,8 +113,16 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
       return s ? `${s.state}: ${s.detail}` : 'no controller';
     });
     summary.statusAfterKey = checked;
-    expect(checked, 'Claude status after entering the key').toMatch(/^ok:/);
-    await expect(host.page.getByTestId('claude-status')).toHaveAttribute('data-state', 'ok');
+    const status = host.page.getByTestId('claude-status');
+    if (EXPECT_BLOCKED) {
+      expect(checked, 'Claude status after entering the key').toMatch(/^browser-blocked:/);
+      expect(checked, 'the status points to the relay').toMatch(/My relay/);
+      await expect(status).toHaveAttribute('data-state', 'browser-blocked');
+      await expect(status).toContainText('My relay');
+    } else {
+      expect(checked, 'Claude status after entering the key').toMatch(/^ok:/);
+      await expect(status).toHaveAttribute('data-state', 'ok');
+    }
     expect(await host.page.getByTestId('claude-key').inputValue()).toBe('');
 
     await joinRoom(friend, code);
@@ -177,8 +194,15 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
     });
 
     expect(gameOver, 'the game completed').toBeTruthy();
-    expect(voiced.length, 'Claude wrote bot lines').toBeGreaterThanOrEqual(5);
-    expect(friendHeardClaude, 'the friend received Claude-written lines').toBeGreaterThan(0);
+    if (EXPECT_BLOCKED) {
+      expect(claude?.status.state, 'still blocked at the end').toBe('browser-blocked');
+      expect(voiced.length, 'no Claude lines from a blocked key').toBe(0);
+      expect(transcript.length, 'bots still spoke').toBeGreaterThan(0);
+      expect(reasons['browser-blocked'] ?? 0, 'scripted lines say why').toBeGreaterThan(0);
+    } else {
+      expect(voiced.length, 'Claude wrote bot lines').toBeGreaterThanOrEqual(5);
+      expect(friendHeardClaude, 'the friend received Claude-written lines').toBeGreaterThan(0);
+    }
     expect(problems).toEqual([]);
     expect(friendPage.includes(KEY), 'friend page must not contain the key').toBe(false);
     expect(hostState.includes(KEY), 'host app state must not contain the key').toBe(false);
