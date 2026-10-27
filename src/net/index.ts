@@ -15,7 +15,13 @@ export * from './transport.ts';
 export * from './protocol.ts';
 export * from './lobby.ts';
 export * from './room.ts';
-export { HostSession, type HostOptions, type SpeechRewriter } from './host.ts';
+export {
+  HostSession,
+  type BotLine,
+  type HostOptions,
+  type SpeechRewrite,
+  type SpeechRewriter,
+} from './host.ts';
 export { ClientSession, roomToken, type ClientOptions } from './client.ts';
 export { playerToken, savedName, saveName } from './identity.ts';
 export { fallbackTransport, peerJsTransport, trysteroTransport };

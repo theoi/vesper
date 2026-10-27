@@ -209,6 +209,7 @@ function lobbyFrame(c: AppController): Frame {
   const leave = h('button', { 'data-testid': 'leave', text: 'Leave room' });
   leave.onclick = () => c.leaveRoom();
   const hostControls = h('div', {}, addBot, fillCount, fill);
+  const claude = claudePanel(c);
 
   const el = h(
     'main',
@@ -218,6 +219,7 @@ function lobbyFrame(c: AppController): Frame {
     bannerEl,
     h('section', {}, h('h2', {}, 'Seats (', seatCount, ')'), seats, hostControls),
     h('section', {}, h('h2', { text: 'Setup' }), pace, roles, validation),
+    claude.el,
     h('section', {}, start, startError, waiting),
     h('section', {}, rename, renameBtn, ' ', leave),
   );
@@ -270,6 +272,8 @@ function lobbyFrame(c: AppController): Frame {
         }),
       );
       hostControls.hidden = !isHost;
+      claude.el.hidden = !isHost;
+      if (isHost) claude.update(st);
       pace.disabled = !isHost;
       pace.value = lobby.settings.pace;
       roles.replaceChildren(...lobby.roles.map((r) => h('li', { text: slotName(r) })));
@@ -288,6 +292,7 @@ function lobbyFrame(c: AppController): Frame {
 function gameFrame(c: AppController): Frame {
   const phase = h('strong', { 'data-testid': 'phase' });
   const timer = h('span', { 'data-testid': 'timer', class: 'muted' });
+  const claudeLine = h('span', { 'data-testid': 'claude-status', class: 'muted', hidden: true });
   const bannerEl = h('p', { 'data-testid': 'banner', class: 'banner', hidden: true });
   const roleCard = h('section', { 'data-testid': 'role-card' });
   const players = h('ul', { 'data-testid': 'players' });
@@ -328,7 +333,7 @@ function gameFrame(c: AppController): Frame {
   const el = h(
     'main',
     { 'data-testid': 'screen-game' },
-    h('section', {}, phase, ' ', timer),
+    h('section', {}, phase, ' ', timer, ' ', claudeLine),
     bannerEl,
     roleCard,
     h('section', {}, h('h2', { text: 'Players' }), players, clearVote, clearNight),
@@ -366,6 +371,10 @@ function gameFrame(c: AppController): Frame {
       const b = banner(s);
       bannerEl.textContent = b;
       bannerEl.hidden = !b;
+      const cl = st.claude;
+      claudeLine.hidden = !s?.isHost || !cl.hasKey;
+      claudeLine.dataset.state = cl.status.state;
+      claudeLine.textContent = `Claude: ${cl.status.state} (${cl.claudeLines}/${cl.lines} lines, ${cl.callsThisGame}/${cl.maxCallsPerGame} calls)`;
       if (!s || !view) {
         phase.textContent = 'Starting…';
         return;
@@ -442,6 +451,75 @@ function gameFrame(c: AppController): Frame {
         );
       }
       back.hidden = !(s.isHost && s.status === 'ended');
+    },
+  };
+}
+
+/** Host-only Claude settings. The key input is cleared after saving; the key never enters AppState. */
+function claudePanel(c: AppController): { el: HTMLElement; update(st: AppState): void } {
+  const key = h('input', {
+    'data-testid': 'claude-key',
+    type: 'password',
+    autocomplete: 'off',
+    size: 36,
+    placeholder: 'Anthropic API key (sk-ant-…)',
+  });
+  const remember = h('input', { 'data-testid': 'claude-remember', type: 'checkbox' });
+  const save = h('button', { 'data-testid': 'claude-save', text: 'Use key' });
+  const test = h('button', { 'data-testid': 'claude-test', text: 'Test key' });
+  const forget = h('button', { 'data-testid': 'claude-forget', text: 'Forget key' });
+  const enabled = h('input', { 'data-testid': 'claude-enabled', type: 'checkbox' });
+  const model = h('input', { 'data-testid': 'claude-model', size: 20 });
+  const workspace = h('input', {
+    'data-testid': 'claude-workspace',
+    size: 20,
+    placeholder: 'Workspace ID (optional)',
+  });
+  const status = h('p', { 'data-testid': 'claude-status' });
+  const usage = h('p', { 'data-testid': 'claude-usage', class: 'muted' });
+  save.onclick = () => {
+    const value = key.value.trim();
+    if (!value) return;
+    c.setClaudeKey(value, { remember: remember.checked });
+    key.value = '';
+    void c.testClaude();
+  };
+  key.onkeydown = (e) => e.key === 'Enter' && save.click();
+  test.onclick = () => void c.testClaude();
+  forget.onclick = () => c.forgetClaude();
+  enabled.onchange = () => c.setClaudeSettings({ enabled: enabled.checked });
+  model.onchange = () => c.setClaudeSettings({ model: model.value });
+  workspace.onchange = () => c.setClaudeSettings({ workspaceId: workspace.value || null });
+  const el = h(
+    'section',
+    { 'data-testid': 'claude-panel' },
+    h('h2', { text: 'Claude bots (optional)' }),
+    h(
+      'p',
+      { class: 'muted' },
+      'With an Anthropic API key, bots write their chat with Claude. The key stays in this browser and goes only to Anthropic; other players never receive it.',
+    ),
+    h('div', {}, key, save, h('label', {}, remember, ' Remember on this device')),
+    h('div', {}, test, forget, ' ', h('label', {}, enabled, ' Use Claude')),
+    h('div', {}, h('label', {}, 'Model ', model), ' ', workspace),
+    status,
+    usage,
+  );
+  return {
+    el,
+    update: (st) => {
+      const cl = st.claude;
+      status.dataset.state = cl.status.state;
+      status.textContent = `${cl.status.state}: ${cl.status.detail}`;
+      key.placeholder = cl.hasKey
+        ? `Key set${cl.remembered ? ' and remembered' : ' for this session'} (hidden)`
+        : 'Anthropic API key (sk-ant-…)';
+      test.disabled = forget.disabled = !cl.hasKey;
+      enabled.checked = cl.enabled;
+      remember.checked = cl.remembered;
+      if (document.activeElement !== model) model.value = cl.model;
+      if (document.activeElement !== workspace) workspace.value = cl.workspaceId ?? '';
+      usage.textContent = cl.hasKey ? `Per-game budget: ${cl.maxCallsPerGame} calls.` : '';
     },
   };
 }
