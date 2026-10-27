@@ -36,6 +36,20 @@ async function loadPeer(): Promise<typeof Peer> {
   return (await import('peerjs')).Peer;
 }
 
+// Messages travel as JSON text. PeerJS's default binary packing costs about
+// 25x more than JSON.stringify for a 16-seat view, which made the host's
+// fan-out the slowest part of a step.
+const encode = (msg: HostMessage | ClientMessage): string => JSON.stringify(msg);
+
+function decode(data: unknown): unknown {
+  if (typeof data !== 'string') return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
 function errorCode(type: string): NetErrorCode {
   if (type === 'unavailable-id') return 'roomTaken';
   if (type === 'peer-unavailable') return 'roomNotFound';
@@ -97,7 +111,7 @@ class PeerJsHost implements HostTransport {
       this.onPeerOpen?.(conn.peer);
     });
     conn.on('data', (data) => {
-      if (this.conns.get(conn.peer) === conn) this.onMessage?.(conn.peer, data);
+      if (this.conns.get(conn.peer) === conn) this.onMessage?.(conn.peer, decode(data));
     });
     conn.on('close', () => {
       if (this.conns.get(conn.peer) !== conn) return;
@@ -109,7 +123,7 @@ class PeerJsHost implements HostTransport {
 
   send(peer: string, msg: HostMessage): void {
     const conn = this.conns.get(peer);
-    if (conn?.open) void conn.send(msg);
+    if (conn?.open) void conn.send(encode(msg));
   }
 
   drop(peer: string): void {
@@ -166,7 +180,7 @@ class PeerJsClient implements ClientTransport {
           peer.disconnect();
           resolve();
         });
-        conn.on('data', (data) => this.onMessage?.(data));
+        conn.on('data', (data) => this.onMessage?.(decode(data)));
         conn.on('close', () => {
           if (!settled) return fail(new NetError('connectFailed'));
           if (this.closed) return;
@@ -184,7 +198,7 @@ class PeerJsClient implements ClientTransport {
   }
 
   send(msg: ClientMessage): void {
-    if (this.conn?.open) void this.conn.send(msg);
+    if (this.conn?.open) void this.conn.send(encode(msg));
   }
 
   close(): void {

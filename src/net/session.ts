@@ -77,25 +77,33 @@ export class Store {
   }
 }
 
-/** Fold an update from the host into the previous view. */
-export function mergeView(
-  prev: PlayerView | null,
-  update: { full: boolean; view: PlayerView },
-): PlayerView {
-  if (update.full || !prev) return update.view;
+type ViewFields = Omit<PlayerView, 'events' | 'lastSeq'>;
+
+/** New events plus only the view fields that changed since the last update. */
+export type ViewPatch = Partial<ViewFields> & Pick<PlayerView, 'events' | 'lastSeq'>;
+
+/** A whole view (join, rejoin, new game) or a patch on the previous one. */
+export type ViewUpdate = { full: true; view: PlayerView } | { full: false; view: ViewPatch };
+
+/** Fold an update from the host into the previous view. Null if a patch has nothing to apply to. */
+export function mergeView(prev: PlayerView | null, update: ViewUpdate): PlayerView | null {
+  if (update.full) return update.view;
+  if (!prev) return null;
   const fresh = update.view.events.filter((e) => e.seq > prev.lastSeq);
-  return { ...update.view, events: prev.events.concat(fresh) };
+  return { ...prev, ...update.view, events: prev.events.concat(fresh) };
 }
 
 /**
- * Host-side stream of one player's view. Sends only what changed, and
- * renumbers events per player so gaps in `seq` don't reveal that hidden
- * events (another player's night action, Syndicate chat) happened.
+ * Host-side stream of one player's view. Sends only what changed (new events
+ * and the top-level fields that differ), and renumbers events per player so
+ * gaps in `seq` don't reveal that hidden events (another player's night
+ * action, Syndicate chat) happened.
  */
 export class ViewChannel {
   private sentSeq = 0;
   private clientSeq = 0;
-  private lastKey: string | null = null;
+  /** JSON of each field as last sent; null until the first (full) update. */
+  private sent: Map<string, string> | null = null;
 
   constructor(readonly playerId: PlayerId) {}
 
@@ -103,12 +111,11 @@ export class ViewChannel {
   reset(): void {
     this.sentSeq = 0;
     this.clientSeq = 0;
-    this.lastKey = null;
+    this.sent = null;
   }
 
   /** The next update for this player, or null if nothing they can see changed. */
-  next(state: GameState): { full: boolean; view: PlayerView } | null {
-    const full = this.lastKey === null;
+  next(state: GameState): ViewUpdate | null {
     const {
       events,
       lastSeq: _lastSeq,
@@ -117,10 +124,26 @@ export class ViewChannel {
       sinceSeq: this.sentSeq,
     });
     this.sentSeq = state.seq;
-    const key = JSON.stringify(rest);
-    if (!full && events.length === 0 && key === this.lastKey) return null;
-    this.lastKey = key;
+    const prev = this.sent;
+    const sent = new Map<string, string>();
+    const changed: Partial<Record<keyof ViewFields, unknown>> = {};
+    let dirty = false;
+    for (const key of Object.keys(rest) as (keyof ViewFields)[]) {
+      const json = JSON.stringify(rest[key]) ?? '';
+      sent.set(key, json);
+      if (prev && prev.get(key) !== json) {
+        changed[key] = rest[key];
+        dirty = true;
+      }
+    }
+    this.sent = sent;
+    if (prev && !dirty && events.length === 0) return null;
     const renumbered = events.map((e) => ({ ...e, seq: ++this.clientSeq }));
-    return { full, view: { ...rest, events: renumbered, lastSeq: this.clientSeq } };
+    if (!prev)
+      return { full: true, view: { ...rest, events: renumbered, lastSeq: this.clientSeq } };
+    return {
+      full: false,
+      view: { ...(changed as Partial<ViewFields>), events: renumbered, lastSeq: this.clientSeq },
+    };
   }
 }

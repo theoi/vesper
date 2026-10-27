@@ -1,8 +1,9 @@
-import type { Intent, PlayerId, PlayerView } from '../engine/index.ts';
+import type { Intent, PlayerId } from '../engine/index.ts';
 import type { LobbyView } from './lobby.ts';
+import type { ViewUpdate } from './session.ts';
 
 /** Bump when host and client can no longer understand each other. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Messages a client sends to the host. */
 export type ClientMessage =
@@ -26,14 +27,15 @@ export type HostMessage =
   | { t: 'welcome'; v: number; you: PlayerId; code: string }
   | { t: 'reject'; reason: RejectReason; message: string }
   | { t: 'lobby'; lobby: LobbyView }
-  | {
+  | ({
       t: 'view';
-      /** True when `view.events` is the complete history (join, rejoin, new game). */
-      full: boolean;
-      view: PlayerView;
       /** Host clock when sent, so clients can show phase timers in host time. */
       hostNow: number;
-    }
+      /**
+       * `full`: the whole view with every event so far (join, rejoin, new game).
+       * Otherwise a patch: new events and only the fields that changed.
+       */
+    } & ViewUpdate)
   | { t: 'rejected'; id: number; error: string }
   | { t: 'pong'; at: number; hostNow: number }
   | { t: 'closed'; reason: CloseReason; message: string };

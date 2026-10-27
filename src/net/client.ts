@@ -202,7 +202,7 @@ export class ClientSession implements GameSession {
       }
       case 'view':
         this.store.set({
-          view: mergeView(this.store.get().view, msg),
+          view: mergeView(this.store.get().view, msg) ?? this.store.get().view,
           clockOffset: msg.hostNow - Date.now(),
         });
         return;
