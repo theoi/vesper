@@ -28,7 +28,8 @@
  * 8. Aftermath. Deaths are applied. Embalmed victims hide their role and will.
  *    A Reckoner who killed a Town member gives up its remaining shots. An Accuser
  *    whose target died becomes a Harlequin. If the Syndicate has no killer left,
- *    a random member becomes the Hatchet.
+ *    a random member becomes the Hatchet. The night's record of who did what is
+ *    added to `GameState.nights` for the end-of-game reveal.
  */
 import type { Ctx } from './ctx.ts';
 import { ROLES } from './roles.ts';
@@ -37,7 +38,9 @@ import type {
   Audience,
   DeathCause,
   GameEventBody,
+  NightAction,
   NightActionKind,
+  NightOutcome,
   NightResult,
   PlayerId,
   PlayerState,
@@ -51,6 +54,8 @@ interface Attack {
   power: number;
   cause: DeathCause;
   primary: boolean;
+  /** The attacker's own pick, when the attack landed on someone else. */
+  chose?: PlayerState;
 }
 
 export interface NightReport {
@@ -73,6 +78,23 @@ export function resolveNight(ctx: Ctx): NightReport {
     results.push({ player, result });
   };
   const kindOf = (p: PlayerState): NightActionKind | undefined => ROLES[p.role].night?.kind;
+  const done = new Map<PlayerId, NightAction>();
+  const record = (
+    actor: PlayerState,
+    target: PlayerState,
+    outcome: NightOutcome,
+    extra: { chose?: PlayerState | undefined; visitors?: PlayerId[] } = {},
+  ) => {
+    done.set(actor.id, {
+      actor: actor.id,
+      role: actor.role,
+      kind: kindOf(actor) ?? 'kill',
+      target: target.id,
+      ...(extra.chose && extra.chose.id !== target.id ? { chose: extra.chose.id } : {}),
+      outcome,
+      ...(extra.visitors ? { visitors: extra.visitors } : {}),
+    });
+  };
 
   // 1. Collect.
   const acts = new Map<PlayerId, PlayerState>();
@@ -100,6 +122,12 @@ export function resolveNight(ctx: Ctx): NightReport {
   }
   for (const id of blocked) tell(byId.get(id) as PlayerState, { kind: 'blocked' });
   const active = (p: PlayerState) => acts.has(p.id) && !blocked.has(p.id);
+  for (const b of actors('block')) {
+    const t = acts.get(b.id) as PlayerState;
+    const tk = kindOf(t);
+    const resisted = t.role === 'cutthroat' || tk === 'block' || tk === 'vest';
+    record(b, t, resisted ? 'resisted' : 'distracted');
+  }
 
   const visits: [PlayerState, PlayerState][] = [];
   const primary: Attack[] = [];
@@ -119,7 +147,19 @@ export function resolveNight(ctx: Ctx): NightReport {
   }
   if (killer && killTarget) {
     visits.push([killer, killTarget]);
-    primary.push({ attacker: killer, target: killTarget, power: 1, cause: 'mafia', primary: true });
+    primary.push({
+      attacker: killer,
+      target: killTarget,
+      power: 1,
+      cause: 'mafia',
+      primary: true,
+      chose: acts.get(killer.id),
+    });
+  }
+  if (patron && order && hatchet) record(patron, order, 'ordered');
+  const hatchetAim = hatchet && (order ?? acts.get(hatchet.id));
+  if (hatchet && hatchetAim && blocked.has(hatchet.id)) {
+    record(hatchet, hatchetAim, 'blocked', { chose: acts.get(hatchet.id) });
   }
 
   // Visits for every other ability that visits (the Syndicate kill is handled above).
@@ -135,7 +175,14 @@ export function resolveNight(ctx: Ctx): NightReport {
     if (!target) continue;
     visits.push([c, target]);
     const power = ROLES[c.role].night?.power ?? 1;
-    primary.push({ attacker: c, target, power, cause: 'cutthroat', primary: true });
+    primary.push({
+      attacker: c,
+      target,
+      power,
+      cause: 'cutthroat',
+      primary: true,
+      chose: acts.get(c.id),
+    });
   }
 
   // Reckoners.
@@ -148,7 +195,12 @@ export function resolveNight(ctx: Ctx): NightReport {
 
   // 4. Marks.
   const framed = new Set<PlayerId>();
-  for (const f of actors('frame')) if (active(f)) framed.add((acts.get(f.id) as PlayerState).id);
+  for (const f of actors('frame')) {
+    if (!active(f)) continue;
+    const t = acts.get(f.id) as PlayerState;
+    framed.add(t.id);
+    record(f, t, 'framed');
+  }
   const embalm = new Map<PlayerId, PlayerState>();
   for (const e of actors('embalm')) {
     const t = acts.get(e.id) as PlayerState;
@@ -174,16 +226,22 @@ export function resolveNight(ctx: Ctx): NightReport {
     armored.add(d.id);
     if (d.usesLeft !== null) d.usesLeft -= 1;
     tell(d, { kind: 'vestUsed' });
+    record(d, d, 'armored');
   }
 
   // 6. Attacks.
   const resolved: Attack[] = [];
+  const attackOutcome = new Map<PlayerId, NightOutcome>();
+  const fought = new Set<PlayerId>();
+  const saved = new Set<PlayerId>();
   for (const a of primary) {
     const sentinel = guards.get(a.target.id)?.shift();
     if (!sentinel) {
       resolved.push(a);
       continue;
     }
+    attackOutcome.set(a.attacker.id, 'intercepted');
+    fought.add(sentinel.id);
     tell(a.target, { kind: 'attackedSurvived', savedBy: 'guarded' });
     tell(sentinel, { kind: 'guardFought', target: a.target.id });
     resolved.push({
@@ -217,6 +275,7 @@ export function resolveNight(ctx: Ctx): NightReport {
         d.notes.push(note);
       }
       dying.set(a.target.id, d);
+      if (a.primary) attackOutcome.set(a.attacker.id, 'killed');
       continue;
     }
     const savedBy = heals.has(a.target.id)
@@ -227,20 +286,33 @@ export function resolveNight(ctx: Ctx): NightReport {
     tell(a.target, { kind: 'attackedSurvived', savedBy });
     for (const m of heals.get(a.target.id) ?? []) {
       tell(m, { kind: 'patientAttacked', target: a.target.id, saved: true });
+      saved.add(m.id);
     }
-    if (a.primary) tell(a.attacker, { kind: 'targetSurvived', target: a.target.id });
+    if (a.primary) {
+      tell(a.attacker, { kind: 'targetSurvived', target: a.target.id });
+      attackOutcome.set(a.attacker.id, 'survived');
+    }
+  }
+  for (const a of primary) {
+    record(a.attacker, a.target, attackOutcome.get(a.attacker.id) ?? 'survived', {
+      chose: a.chose,
+    });
+  }
+  for (const [targetId, menders] of heals) {
+    const t = byId.get(targetId) as PlayerState;
+    for (const m of menders) record(m, t, saved.has(m.id) ? 'saved' : 'quiet');
+  }
+  for (const g of actors('guard')) {
+    if (active(g)) record(g, acts.get(g.id) as PlayerState, fought.has(g.id) ? 'fought' : 'quiet');
   }
 
   // 7. Information (roles as they were during the night).
   for (const aug of actors('investigate')) {
     if (!active(aug)) continue;
     const t = acts.get(aug.id) as PlayerState;
-    const suspicious = framed.has(t.id) || ROLES[t.role].appearsSuspicious;
-    tell(aug, {
-      kind: 'investigation',
-      target: t.id,
-      finding: suspicious ? 'suspicious' : 'clear',
-    });
+    const finding = framed.has(t.id) || ROLES[t.role].appearsSuspicious ? 'suspicious' : 'clear';
+    tell(aug, { kind: 'investigation', target: t.id, finding });
+    record(aug, t, finding);
   }
   for (const l of actors('watch')) {
     if (!active(l)) continue;
@@ -249,6 +321,7 @@ export function resolveNight(ctx: Ctx): NightReport {
     for (const [v, tt] of visits) if (tt.id === t.id && v.id !== l.id) seen.add(v.id);
     const visitors = s.players.filter((p) => seen.has(p.id)).map((p) => p.id);
     tell(l, { kind: 'visitors', target: t.id, visitors });
+    record(l, t, 'watched', { visitors });
   }
 
   // 8. Aftermath.
@@ -277,6 +350,10 @@ export function resolveNight(ctx: Ctx): NightReport {
     t.death.embalmed = true;
     if (e.usesLeft !== null) e.usesLeft -= 1;
     tell(e, { kind: 'embalmed', target: t.id, role: t.death.role, will: t.death.will });
+    record(e, t, 'embalmed');
+  }
+  for (const e of actors('embalm')) {
+    if (active(e) && !done.has(e.id)) record(e, acts.get(e.id) as PlayerState, 'quiet');
   }
   for (const a of resolved) {
     if (a.cause !== 'reckoner' || !dying.has(a.target.id)) continue;
@@ -284,6 +361,14 @@ export function resolveNight(ctx: Ctx): NightReport {
     a.attacker.usesLeft = 0;
     tell(a.attacker, { kind: 'reckonerGuilt', target: a.target.id });
   }
+
+  for (const p of alive) {
+    if (blocked.has(p.id) && acts.has(p.id) && !done.has(p.id)) {
+      record(p, acts.get(p.id) as PlayerState, 'blocked');
+    }
+  }
+  const actions = s.players.flatMap((p) => done.get(p.id) ?? []);
+  s.nights = [...s.nights, { night, actions, deaths: deaths.slice() }];
 
   for (const id of deaths) {
     const p = byId.get(id) as PlayerState;

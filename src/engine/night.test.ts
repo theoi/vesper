@@ -389,3 +389,111 @@ describe('night resolution', () => {
     }
   });
 });
+
+describe('night history', () => {
+  it('records what every ability did and how it turned out', () => {
+    const roles: RoleId[] = [
+      'augur',
+      'lamplighter',
+      'muse',
+      'drifter',
+      'resident',
+      'resident',
+      'slanderer',
+      'lure',
+      'hatchet',
+      'cutthroat',
+      'muse',
+    ];
+    const d = runNight(start(pinnedGame(roles)), {
+      p6: 'p4',
+      p0: 'p4',
+      p1: 'p4',
+      p2: 'p9',
+      p3: 'p3',
+      p7: 'p3',
+      p8: 'p5',
+      p9: 'p3',
+      p10: 'p8',
+    });
+    expect(d.state.nights).toEqual([
+      {
+        night: 1,
+        actions: [
+          { actor: 'p0', role: 'augur', kind: 'investigate', target: 'p4', outcome: 'suspicious' },
+          {
+            actor: 'p1',
+            role: 'lamplighter',
+            kind: 'watch',
+            target: 'p4',
+            outcome: 'watched',
+            visitors: ['p0', 'p6'],
+          },
+          { actor: 'p2', role: 'muse', kind: 'block', target: 'p9', outcome: 'resisted' },
+          { actor: 'p3', role: 'drifter', kind: 'vest', target: 'p3', outcome: 'armored' },
+          { actor: 'p6', role: 'slanderer', kind: 'frame', target: 'p4', outcome: 'framed' },
+          { actor: 'p7', role: 'lure', kind: 'block', target: 'p3', outcome: 'resisted' },
+          { actor: 'p8', role: 'hatchet', kind: 'kill', target: 'p5', outcome: 'blocked' },
+          {
+            actor: 'p9',
+            role: 'cutthroat',
+            kind: 'stab',
+            target: 'p2',
+            chose: 'p3',
+            outcome: 'killed',
+          },
+          { actor: 'p10', role: 'muse', kind: 'block', target: 'p8', outcome: 'distracted' },
+        ],
+        deaths: ['p2'],
+      },
+    ]);
+  });
+
+  it("records the Patron's order, the Hatchet's own pick, and abilities that met nothing", () => {
+    const roles: RoleId[] = [
+      'augur',
+      'mender',
+      'sentinel',
+      'resident',
+      'resident',
+      'patron',
+      'hatchet',
+      'embalmer',
+    ];
+    const d = runNight(start(pinnedGame(roles)), {
+      p0: 'p5',
+      p1: 'p3',
+      p2: 'p0',
+      p5: 'p4',
+      p6: 'p3',
+      p7: 'p3',
+    });
+    expect(d.state.nights.at(-1)).toEqual({
+      night: 1,
+      actions: [
+        { actor: 'p0', role: 'augur', kind: 'investigate', target: 'p5', outcome: 'clear' },
+        { actor: 'p1', role: 'mender', kind: 'heal', target: 'p3', outcome: 'quiet' },
+        { actor: 'p2', role: 'sentinel', kind: 'guard', target: 'p0', outcome: 'quiet' },
+        { actor: 'p5', role: 'patron', kind: 'kill', target: 'p4', outcome: 'ordered' },
+        {
+          actor: 'p6',
+          role: 'hatchet',
+          kind: 'kill',
+          target: 'p4',
+          chose: 'p3',
+          outcome: 'killed',
+        },
+        { actor: 'p7', role: 'embalmer', kind: 'embalm', target: 'p3', outcome: 'quiet' },
+      ],
+      deaths: ['p4'],
+    });
+  });
+
+  it('records a quiet night with no actions', () => {
+    const d = runNight(
+      start(pinnedGame(['resident', 'resident', 'resident', 'resident', 'hatchet'])),
+      {},
+    );
+    expect(d.state.nights).toEqual([{ night: 1, actions: [], deaths: [] }]);
+  });
+});

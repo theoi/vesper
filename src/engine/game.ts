@@ -135,6 +135,7 @@ export function createGame(config: GameConfig, seed: number | string, now = 0): 
     ready: [],
     quietCycles: 0,
     deathsThisCycle: 0,
+    nights: [],
     result: null,
   };
   const ctx: Ctx = { s: state, rng, events: [], now };
@@ -603,6 +604,7 @@ function endGame(ctx: Ctx, result: GameResult): void {
     type: 'gameOver',
     result,
     roles: Object.fromEntries(s.players.map((p) => [p.id, p.role])),
+    nights: s.nights,
   });
   enterPhase(ctx, 'ended', null);
 }
