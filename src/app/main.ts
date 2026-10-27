@@ -22,6 +22,14 @@ function browserStorage(): Storage | null {
   }
 }
 
+function tabStorage(): Storage | null {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 // `?claudeCalls=N` lowers the per-game Claude call budget (cost control for tests).
 const claudeCalls = Number(params.get('claudeCalls'));
 
@@ -35,6 +43,10 @@ const controller = new AppController({
   baseUrl: location.origin + location.pathname,
   linkCode: roomFromUrl(),
   recordNet,
+  // Per tab, so a reload resumes the room but a second tab doesn't fork it.
+  hostStore: tabStorage(),
+  // The bundle URL carries a content hash, so it changes with every deploy.
+  buildId: import.meta.url,
   onRoomUrl: (code) => {
     const url = new URL(location.href);
     if (code) url.searchParams.set('room', code);
@@ -51,9 +63,23 @@ declare global {
 }
 window.__vesper = controller;
 
-// The host's browser is the game: closing it ends the room for everyone.
+// The host's browser is the game. Keep a copy of the room in this tab so a
+// reload picks the game back up while friends wait to reconnect. Leaving with
+// the Leave button still ends the room for everyone.
+const SAVE_MS = 5000;
+setInterval(() => controller.saveHost(), SAVE_MS);
+addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') controller.saveHost();
+});
+let suspended = false;
 addEventListener('pagehide', () => {
-  if (controller.host) controller.leaveRoom();
+  if (!controller.host) return;
+  suspended = true;
+  controller.suspendHost();
+});
+// Back from the back-forward cache with the room suspended: reload to resume it.
+addEventListener('pageshow', (e) => {
+  if (e.persisted && suspended) location.reload();
 });
 
 const app = document.querySelector<HTMLElement>('#app');
@@ -62,4 +88,4 @@ if (app) mountShell(app, controller);
 // Opening a share link with a remembered name rejoins straight away.
 const linkCode = controller.getState().linkCode;
 const name = controller.getState().name;
-if (linkCode && name) void controller.joinRoom(linkCode, name);
+if (!controller.resumeHost() && linkCode && name) void controller.joinRoom(linkCode, name);

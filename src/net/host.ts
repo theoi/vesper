@@ -35,7 +35,7 @@ import {
   type HostMessage,
   type RejectReason,
 } from './protocol.ts';
-import { randomCode } from './room.ts';
+import { normalizeCode, randomCode } from './room.ts';
 import { backgroundTimers, type TimerApi } from './timers.ts';
 import {
   Store,
@@ -89,6 +89,8 @@ export interface HostOptions {
   /** Null plays offline (solo with bots); no one else can join. */
   transport: Transport | null;
   code?: string;
+  /** Bring back a room saved with `save()` (same code, seats, and game). `hostName` and `code` are ignored. */
+  resume?: HostSave;
   rewriteSpeech?: SpeechRewriter;
   /** Return false to skip the rewriter and apply scripted lines at once (e.g. no key). */
   shouldRewrite?: () => boolean;
@@ -111,6 +113,51 @@ const SWEEP_MS = 5000;
 const BUCKET_SIZE = 12;
 const BUCKET_REFILL = 4;
 const OPEN_ATTEMPTS = 3;
+/** A resumed room keeps its code, so it waits for the old page's id to be released. */
+const RESUME_OPEN_ATTEMPTS = 8;
+const RESUME_RETRY_MS = 2000;
+const SAVE_VERSION = 1;
+
+/**
+ * Everything needed to bring a room back after the host's page reloads.
+ * Holds every secret (roles, seat tokens): keep it in the host's own browser.
+ */
+export interface HostSave {
+  v: typeof SAVE_VERSION;
+  protocol: number;
+  savedAt: number;
+  code: string;
+  hostId: PlayerId;
+  seats: LobbySeat[];
+  settings: LobbySettings;
+  status: LobbyStatus;
+  game: GameState | null;
+  bots: BotState[];
+  tokens: [string, PlayerId][];
+  banned: string[];
+  transcript: BotLine[];
+}
+
+const LOBBY_STATUSES: readonly string[] = ['open', 'playing', 'ended'] satisfies LobbyStatus[];
+
+/** Shape check for a save read back from storage; null if it is from another version or damaged. */
+export function parseHostSave(raw: unknown): HostSave | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const s = raw as Partial<HostSave>;
+  if (s.v !== SAVE_VERSION || s.protocol !== PROTOCOL_VERSION) return null;
+  if (typeof s.savedAt !== 'number' || typeof s.code !== 'string') return null;
+  if (normalizeCode(s.code) !== s.code || typeof s.hostId !== 'string') return null;
+  if (!Array.isArray(s.seats) || !s.seats.some((x) => x.id === s.hostId && x.kind === 'host'))
+    return null;
+  if (typeof s.settings !== 'object' || s.settings === null) return null;
+  if (typeof s.status !== 'string' || !LOBBY_STATUSES.includes(s.status)) return null;
+  if (s.game !== null && (typeof s.game !== 'object' || s.game?.v !== 1)) return null;
+  if ((s.status === 'open') !== (s.game === null)) return null;
+  for (const list of [s.bots, s.tokens, s.banned, s.transcript]) {
+    if (!Array.isArray(list)) return null;
+  }
+  return s as HostSave;
+}
 
 interface Peer {
   id: string;
@@ -165,24 +212,40 @@ export class HostSession implements GameSession {
   private timer: number | null = null;
   private sweeper: number | null = null;
   private closed = false;
+  private readonly resumed: boolean;
 
   constructor(opts: HostOptions) {
     this.opts = opts;
     this.timers = opts.timers ?? backgroundTimers();
-    this._code = opts.code ?? randomCode();
-    this.hostId = `p-${randomId(4)}`;
-    this.seats = [
-      {
-        id: this.hostId,
-        name: uniqueName(opts.hostName, [], 'Host'),
-        kind: 'host',
-        connected: true,
-      },
-    ];
-    this.channels.set(this.hostId, new ViewChannel(this.hostId));
+    const saved = opts.resume;
+    this.resumed = !!saved;
+    this._code = saved?.code ?? opts.code ?? randomCode();
+    this.hostId = saved?.hostId ?? `p-${randomId(4)}`;
+    this.seats = saved
+      ? saved.seats.map((s) => ({ ...s, connected: s.kind !== 'human' }))
+      : [
+          {
+            id: this.hostId,
+            name: uniqueName(opts.hostName, [], 'Host'),
+            kind: 'host',
+            connected: true,
+          },
+        ];
+    if (saved) {
+      this.settings = { ...saved.settings };
+      this.status = saved.status;
+      this.game = saved.game;
+      for (const bot of saved.bots) this.bots.set(bot.id, bot);
+      this.tokens = new Map(saved.tokens);
+      this.banned = new Set(saved.banned);
+      this.transcript = saved.transcript.slice();
+    }
+    for (const seat of this.seats) {
+      if (seat.kind !== 'bot') this.channels.set(seat.id, new ViewChannel(seat.id));
+    }
     this.store = new Store({
       isHost: true,
-      status: 'lobby',
+      status: this.sessionStatus(),
       code: this.code,
       you: this.hostId,
       lobby: this.lobby(),
@@ -192,6 +255,11 @@ export class HostSession implements GameSession {
       notice: null,
       lastRejection: null,
     });
+    if (this.game) {
+      // Bots may have had reactions pending when the page went away.
+      this.botsDirty = true;
+      this.afterStep();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -207,7 +275,8 @@ export class HostSession implements GameSession {
     if (!transport) return this.setNetwork({ state: 'offline' });
     this.setNetwork({ state: 'opening' });
     let lastError: NetError = new NetError('signaling');
-    for (let attempt = 0; attempt < OPEN_ATTEMPTS && !this.closed; attempt++) {
+    const attempts = this.resumed ? RESUME_OPEN_ATTEMPTS : OPEN_ATTEMPTS;
+    for (let attempt = 0; attempt < attempts && !this.closed; attempt++) {
       const t = transport.host(this._code);
       try {
         await t.open();
@@ -215,6 +284,12 @@ export class HostSession implements GameSession {
         t.close();
         lastError = toNetError(e);
         if (lastError.code !== 'roomTaken') break;
+        if (this.resumed) {
+          // Friends hold links with this code. The signaling server can keep the
+          // old page's id for a moment after a reload, so wait for it to let go.
+          await new Promise<void>((r) => this.timers.setTimeout(r, RESUME_RETRY_MS));
+          continue;
+        }
         // Collisions are rare; a fresh code is safe because nobody has the link yet.
         this._code = randomCode();
         this.store.set({ code: this._code, lobby: this.lobby() });
@@ -250,6 +325,45 @@ export class HostSession implements GameSession {
       status: 'closed',
       notice: { code: 'hostLeft', message: 'You closed the room.' },
     });
+  }
+
+  /**
+   * Stop without telling friends the game ended, because the page is about to
+   * reload and resume from `save()`. Friends see a dropped connection and keep
+   * trying to reconnect for a while.
+   */
+  suspend(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.clearTimer();
+    if (this.sweeper !== null) this.timers.clearTimeout(this.sweeper);
+    // Close now so the signaling server releases the room id for the reloaded page.
+    this.transport?.close();
+    this.transport = null;
+    this.peers.clear();
+    this.peerOf.clear();
+  }
+
+  /**
+   * The room as plain JSON-safe data, for `HostOptions.resume`. It shares
+   * objects with the live session, so serialize it right away.
+   */
+  save(): HostSave {
+    return {
+      v: SAVE_VERSION,
+      protocol: PROTOCOL_VERSION,
+      savedAt: Date.now(),
+      code: this._code,
+      hostId: this.hostId,
+      seats: this.seats,
+      settings: this.settings,
+      status: this.status,
+      game: this.game,
+      bots: [...this.bots.values()],
+      tokens: [...this.tokens],
+      banned: [...this.banned],
+      transcript: this.transcript,
+    };
   }
 
   get code(): string {
@@ -731,11 +845,13 @@ export class HostSession implements GameSession {
     return lobbyView(this.code, this.hostId, this.status, this.seats, this.settings);
   }
 
+  private sessionStatus(): 'lobby' | 'playing' | 'ended' {
+    return this.status === 'open' ? 'lobby' : this.status === 'playing' ? 'playing' : 'ended';
+  }
+
   private lobbyChanged(): void {
     const lobby = this.lobby();
-    const status =
-      this.status === 'open' ? 'lobby' : this.status === 'playing' ? 'playing' : 'ended';
-    if (!this.closed) this.store.set({ lobby, status });
+    if (!this.closed) this.store.set({ lobby, status: this.sessionStatus() });
     for (const peer of this.peers.values()) {
       if (peer.playerId) this.sendTo(peer, { t: 'lobby', lobby });
     }

@@ -165,3 +165,69 @@ describe('Claude bot chat glue', () => {
     expect(anthropic.calls).toHaveLength(0);
   });
 });
+
+describe('host resume', () => {
+  function reloadable(
+    net: ReturnType<typeof createMemoryNetwork>,
+    hostStore: KeyValueStore,
+    buildId = 'build-1',
+  ) {
+    return new AppController({
+      transport: () => net,
+      baseUrl: 'https://theoi.github.io/vesper/',
+      storage: memoryStore(),
+      hostStore,
+      buildId,
+    });
+  }
+
+  it('resumes the hosted game after a reload and friends get their seats back', async () => {
+    const net = createMemoryNetwork();
+    const tab = memoryStore();
+    const before = reloadable(net, tab);
+    const { friend, received } = await hostWithFriend(before, net);
+    expect(before.start()).toBeNull();
+    await vi.advanceTimersByTimeAsync(5000);
+    const code = before.getState().session!.code;
+    const role = before.getState().session!.view!.you.role;
+    const friendRole = friend.snapshot().view!.you.role;
+
+    before.suspendHost();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(friend.snapshot().status).toBe('reconnecting');
+
+    const after = reloadable(net, tab);
+    expect(after.resumeHost()).toBe(true);
+    await vi.advanceTimersByTimeAsync(3000);
+    const s = after.getState().session!;
+    expect(s.status).toBe('playing');
+    expect(s.code).toBe(code);
+    expect(s.network.state).toBe('open');
+    expect(s.view?.you.role).toBe(role);
+    expect(friend.snapshot().status).toBe('playing');
+    expect(friend.snapshot().view?.you.role).toBe(friendRole);
+    expect(received.some((m) => m.t === 'closed')).toBe(false);
+  });
+
+  it('starts fresh after leaving, on a new build, or with no save', async () => {
+    const net = createMemoryNetwork();
+    const tab = memoryStore();
+    const c = reloadable(net, tab);
+    expect(c.resumeHost()).toBe(false);
+
+    await c.hostRoom('Solo', { online: false, seats: 7 });
+    c.saveHost();
+    expect(reloadable(net, tab, 'build-2').resumeHost()).toBe(false);
+
+    c.saveHost();
+    c.leaveRoom();
+    expect(reloadable(net, tab).resumeHost()).toBe(false);
+
+    await c.hostRoom('Solo', { online: false, seats: 7 });
+    c.saveHost();
+    const solo = reloadable(net, tab);
+    expect(solo.resumeHost()).toBe(true);
+    expect(solo.getState().session?.network.state).toBe('offline');
+    expect(solo.getState().session?.lobby?.seats).toHaveLength(7);
+  });
+});

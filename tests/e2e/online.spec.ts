@@ -115,12 +115,13 @@ test.describe('online play @online', () => {
     }
     console.log(`E2E-SUMMARY ${JSON.stringify(summary)}`);
 
-    // The host leaves: friends get a clear message.
+    // The host closes the tab: friends wait out the reconnect window (the host
+    // might be reloading), then get a clear message.
     await host.page.close();
     for (const p of [ari, bo]) {
       await expect(p.page.getByTestId('notice')).toHaveText(
         'The host left, so the game has ended.',
-        { timeout: 45_000 },
+        { timeout: 90_000 },
       );
     }
     for (const p of players) expect(p.errors).toEqual([]);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auditClientMessages } from '../../tests/support/leak-audit.ts';
 import { ClientSession } from './client.ts';
-import { HostSession } from './host.ts';
+import { HostSession, parseHostSave, type HostSave } from './host.ts';
 import { randomId } from './identity.ts';
 import { createMemoryNetwork, type MemoryNetwork } from './memory.ts';
 import { parseClientMessage, type HostMessage } from './protocol.ts';
@@ -316,5 +316,93 @@ describe('game sessions', () => {
     const lines = host.snapshot().view?.events.filter((e) => e.type === 'chat') ?? [];
     expect(lines.length).toBeLessThan(20);
     expect(a.client.snapshot().lastRejection?.error).toMatch(/Slow down/);
+  });
+});
+
+describe('host resume', () => {
+  const roundTrip = (save: HostSave): HostSave => JSON.parse(JSON.stringify(save)) as HostSave;
+
+  it('picks a saved game back up from JSON exactly where it left off', async () => {
+    const host = new HostSession({ hostName: 'Solo', transport: null, code: 'ABCDE' });
+    await host.open();
+    host.fillWithBots(9);
+    host.updateSettings({ pace: 'fast' });
+    expect(host.start()).toBeNull();
+    await flush(20_000);
+    expect(host.botLines().length).toBeGreaterThan(0);
+
+    const saved = parseHostSave(roundTrip(host.save()));
+    expect(saved).not.toBeNull();
+    const resumed = new HostSession({ hostName: 'Other', transport: null, resume: saved! });
+    expect(resumed.code).toBe('ABCDE');
+    expect(resumed.hostId).toBe(host.hostId);
+    expect(resumed.snapshot().status).toBe('playing');
+    expect(resumed.snapshot().view?.you.role).toBe(host.snapshot().view?.you.role);
+
+    // Run the original and the resumed copy side by side: bots, timers, and
+    // the engine must carry on identically.
+    for (let i = 0; i < 200 && host.snapshot().status !== 'ended'; i++) await flush(10_000);
+    expect(host.snapshot().status).toBe('ended');
+    expect(resumed.snapshot().status).toBe('ended');
+    expect(resumed.debugState().game).toEqual(host.debugState().game);
+    expect(resumed.snapshot().view).toEqual(host.snapshot().view);
+    expect(resumed.botLines()).toEqual(host.botLines());
+  });
+
+  it('brings friends back to their seats after the host page reloads', async () => {
+    const net = createMemoryNetwork();
+    const host = await openHost(net);
+    const a = await join(net, 'Ari');
+    host.fillWithBots(7);
+    host.updateSettings({ pace: 'fast' });
+    expect(host.start()).toBeNull();
+    await flush(5000);
+    const seat = a.client.snapshot().you;
+    const role = a.client.snapshot().view?.you.role;
+
+    const saved = roundTrip(host.save());
+    host.suspend();
+    await flush(1000);
+    expect(a.client.snapshot().status).toBe('reconnecting');
+
+    const back = new HostSession({ hostName: 'Hana', transport: net, resume: saved });
+    expect(await back.open()).toEqual({ state: 'open' });
+    expect(back.code).toBe('ABCDE');
+    await flush(3000);
+    expect(a.client.snapshot().status).toBe('playing');
+    expect(a.client.snapshot().you).toBe(seat);
+    expect(a.client.snapshot().view?.you.role).toBe(role);
+    expect(back.snapshot().lobby?.seats.find((s) => s.id === seat)?.connected).toBe(true);
+
+    a.client.sendIntent({ type: 'will', text: 'Back again.' });
+    await flush(20);
+    expect(a.client.snapshot().view?.you.will).toBe('Back again.');
+    expect(a.received.some((m) => m.t === 'closed')).toBe(false);
+  });
+
+  it('waits for the old room id to be released instead of changing the code', async () => {
+    const net = createMemoryNetwork();
+    const host = await openHost(net);
+    const back = new HostSession({
+      hostName: 'Hana',
+      transport: net,
+      resume: roundTrip(host.save()),
+    });
+    const opening = back.open();
+    await flush(100);
+    expect(back.snapshot().network.state).toBe('opening');
+    host.suspend();
+    await flush(5000);
+    expect(await opening).toEqual({ state: 'open' });
+    expect(back.code).toBe('ABCDE');
+  });
+
+  it('rejects saves from another version', () => {
+    const save = new HostSession({ hostName: 'Hana', transport: null }).save();
+    expect(parseHostSave(roundTrip(save))).not.toBeNull();
+    expect(parseHostSave({ ...save, v: 2 })).toBeNull();
+    expect(parseHostSave({ ...save, protocol: 0 })).toBeNull();
+    expect(parseHostSave({ ...save, status: 'playing' })).toBeNull();
+    expect(parseHostSave('nope')).toBeNull();
   });
 });

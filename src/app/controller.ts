@@ -14,10 +14,12 @@ import {
   ClientSession,
   HostSession,
   normalizeCode,
+  parseHostSave,
   roomLink,
   saveName,
   savedName,
   type BotLine,
+  type HostSave,
   type GameSession,
   type HostMessage,
   type LobbySettings,
@@ -79,9 +81,23 @@ export interface ControllerOptions {
   claudeLimits?: Partial<ChatLimits>;
   /** For tests: replaces fetch for Anthropic calls. */
   claudeFetch?: FetchLike;
+  /** Where the hosted room is kept so a reload can resume it (sessionStorage in the browser). */
+  hostStore?: KeyValueStore | null;
+  /** Identifies this build. A saved room only resumes on the build that saved it. */
+  buildId?: string;
 }
 
 type Listener = (state: AppState) => void;
+
+const HOST_SAVE_KEY = 'vesper.host';
+/** Friends stop waiting long before this; it mostly bounds solo games. */
+const MAX_RESUME_AGE_MS = 10 * 60_000;
+
+interface StoredHost {
+  build: string;
+  online: boolean;
+  save: HostSave;
+}
 
 export class AppController {
   private state: AppState;
@@ -138,9 +154,17 @@ export class AppController {
   /** Host a room. `online: false` plays solo with bots and never touches the network. */
   async hostRoom(name: string, opts: { online: boolean; seats?: number } = { online: true }) {
     this.rememberName(name);
-    const host = new HostSession({
+    const host = this.createHost(name, opts.online);
+    if (opts.seats) host.fillWithBots(opts.seats);
+    this.attach(host);
+    await host.open();
+  }
+
+  private createHost(name: string, online: boolean, resume?: HostSave): HostSession {
+    return new HostSession({
       hostName: name,
-      transport: opts.online ? this.opts.transport() : null,
+      transport: online ? this.opts.transport() : null,
+      ...(resume ? { resume } : {}),
       rewriteSpeech: async ({ view, speech }) => {
         const r = await this.chatLayer.rewrite(view, speech);
         const reason = r.rule ? `guardrail:${r.rule}` : r.reason;
@@ -153,9 +177,62 @@ export class AppController {
         this.refreshClaude();
       },
     });
-    if (opts.seats) host.fillWithBots(opts.seats);
+  }
+
+  /** Keep a copy of the hosted room so a reload can resume it. Call it often. */
+  saveHost(): void {
+    const host = this.host;
+    const store = this.opts.hostStore;
+    if (!host || !store || host.snapshot().status === 'closed') return;
+    const stored: StoredHost = {
+      build: this.opts.buildId ?? '',
+      online: host.snapshot().network.state !== 'offline',
+      save: host.save(),
+    };
+    try {
+      store.setItem(HOST_SAVE_KEY, JSON.stringify(stored));
+    } catch {
+      // Storage is full or blocked: the room just won't survive a reload.
+    }
+  }
+
+  /** The page is unloading: save the room and go quiet without ending the game for friends. */
+  suspendHost(): void {
+    if (!this.host) return;
+    this.saveHost();
+    this.host.suspend();
+  }
+
+  /**
+   * Resume the room this tab was hosting before a reload, if one was saved.
+   * Returns true when the room is back (friends reconnect on their own).
+   */
+  resumeHost(): boolean {
+    const store = this.opts.hostStore;
+    const raw = store?.getItem(HOST_SAVE_KEY);
+    if (!store || !raw) return false;
+    // A save that fails to resume must not trap the tab in a reload loop.
+    store.removeItem(HOST_SAVE_KEY);
+    let stored: Partial<StoredHost>;
+    try {
+      stored = JSON.parse(raw) as Partial<StoredHost>;
+    } catch {
+      return false;
+    }
+    if (stored.build !== (this.opts.buildId ?? '')) return false;
+    const save = parseHostSave(stored.save);
+    if (!save || Date.now() - save.savedAt > MAX_RESUME_AGE_MS) return false;
+    let host: HostSession;
+    try {
+      const name = save.seats.find((s) => s.id === save.hostId)?.name ?? '';
+      host = this.createHost(name, stored.online === true, save);
+    } catch (e) {
+      console.error('Could not resume the saved room', e);
+      return false;
+    }
     this.attach(host);
-    await host.open();
+    void host.open();
+    return true;
   }
 
   /** Join a room by code or link. */
@@ -181,6 +258,7 @@ export class AppController {
 
   /** Leave the room (as host, this ends the game for everyone) and go home. */
   leaveRoom(): void {
+    this.opts.hostStore?.removeItem(HOST_SAVE_KEY);
     this.session?.leave();
     this.detach();
     this.opts.onRoomUrl?.(null);
