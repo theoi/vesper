@@ -6,6 +6,12 @@ Live site: https://theoi.github.io/vesper/
 
 > Work in progress. A full guide to playing, hosting, and enabling Claude bots will land here.
 
+## Claude bots (optional)
+
+The host can let bots write their chat with Claude. In the lobby, paste an Anthropic API key into **Claude bots** and press **Use key**; the status shows whether it works. The key stays in the host's browser (in memory, or in local storage if you tick **Remember on this device**) and is sent only to Anthropic, never to other players. If the key is missing or a call fails, bots fall back to scripted chat and the game carries on.
+
+Some Anthropic organizations block requests made directly from a browser (for example, organizations with custom data retention settings). Keys from those organizations show as rejected; use a key from an organization or workspace without custom retention.
+
 ## Development
 
 Requires Node 22.12 or newer.
