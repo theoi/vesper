@@ -437,7 +437,7 @@ function planDead(t: Turn): void {
       mem.queue.push({
         t: 'deadTip',
         target,
-        finding: results[0] ? 'read Suspicious' : 'suspicious',
+        finding: results[0] ? 'came up Suspicious' : 'are suspicious',
       });
     }
   }

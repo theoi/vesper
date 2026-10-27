@@ -1,3 +1,4 @@
+import { SAVED_BY, deathPhrase, resultLine } from '../content/index.ts';
 import {
   ROLES,
   type GameEvent,
@@ -84,9 +85,10 @@ export function describeEvent(view: PlayerView, e: GameEvent): string | null {
         ? `${n(e.player)} picks ${e.targets.map(n).join(', ')} (${e.kind}).`
         : `${n(e.player)} cancels their pick.`;
     case 'death': {
-      const role = e.embalmed ? 'role hidden' : roleName(e.role);
+      const role =
+        e.embalmed || !e.role ? 'Their role is hidden.' : `They were the ${roleName(e.role)}.`;
       const will = e.will ? ` Their will: "${e.will}"` : '';
-      return `${n(e.player)} died (${e.causes.join(', ')}). ${role}.${will}`;
+      return `${n(e.player)} ${deathPhrase(e.causes)}. ${role}${will}`;
     }
     case 'dawn':
       return e.deaths.length === 0 ? 'Nobody died last night.' : null;
@@ -97,7 +99,7 @@ export function describeEvent(view: PlayerView, e: GameEvent): string | null {
     case 'neutralWin':
       return `${n(e.player)} (${roleName(e.role)}) has achieved their goal.`;
     case 'gameOver':
-      return `Game over: ${e.result.outcome} (${e.result.reason}).`;
+      return `Game over. ${resultLine(e.result)}`;
   }
 }
 
@@ -116,7 +118,7 @@ function describeResult(
     case 'blocked':
       return 'You were distracted and could not act.';
     case 'attackedSurvived':
-      return `You were attacked but survived (${r.savedBy}).`;
+      return `You were attacked, but ${SAVED_BY[r.savedBy]}.`;
     case 'patientAttacked':
       return `${n(r.target)} was attacked${r.saved ? ' and you saved them' : ''}.`;
     case 'guardFought':
