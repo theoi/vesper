@@ -1,12 +1,48 @@
-const app = document.querySelector<HTMLDivElement>('#app');
+import { roomFromUrl, transportByName } from '../net/index.ts';
+import { AppController } from './controller.ts';
+import { mountShell } from './shell.ts';
 
-if (app) {
-  app.innerHTML = `
-    <main style="min-height:100vh;display:grid;place-items:center;background:#07060b;color:#e9e4f5;font-family:system-ui,sans-serif">
-      <div style="text-align:center">
-        <h1 style="font-weight:300;letter-spacing:0.4em;margin:0">VESPER</h1>
-        <p style="opacity:0.6">The town is still being built. Come back at dusk.</p>
-      </div>
-    </main>
-  `;
+const params = new URLSearchParams(location.search);
+
+// Opt-in network recording for e2e tests and debugging.
+const recordNet = (() => {
+  try {
+    return localStorage.getItem('vesper.netlog') === '1';
+  } catch {
+    return false;
+  }
+})();
+
+const controller = new AppController({
+  transport: () => transportByName(params.get('net')),
+  baseUrl: location.origin + location.pathname,
+  linkCode: roomFromUrl(),
+  recordNet,
+  onRoomUrl: (code) => {
+    const url = new URL(location.href);
+    if (code) url.searchParams.set('room', code);
+    else url.searchParams.delete('room');
+    history.replaceState(null, '', url);
+  },
+});
+
+declare global {
+  interface Window {
+    /** Controller handle for e2e tests and debugging (see src/app/README.md). */
+    __vesper?: AppController;
+  }
 }
+window.__vesper = controller;
+
+// The host's browser is the game: closing it ends the room for everyone.
+addEventListener('pagehide', () => {
+  if (controller.host) controller.leaveRoom();
+});
+
+const app = document.querySelector<HTMLElement>('#app');
+if (app) mountShell(app, controller);
+
+// Opening a share link with a remembered name rejoins straight away.
+const linkCode = controller.getState().linkCode;
+const name = controller.getState().name;
+if (linkCode && name) void controller.joinRoom(linkCode, name);
