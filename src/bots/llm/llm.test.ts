@@ -286,6 +286,20 @@ describe('prompts use only the speaking bot’s own view', () => {
     expect(buildPrompt(viewFor(d.state, 'p6'), pub, 200).user).not.toContain('hit her');
   });
 
+  it('shows the catchphrase only when the draft uses it', () => {
+    const view = viewFor(day2().state, 'p0');
+    const plain = line('accuse', 'Gus is hiding something.', accuseGus.act, {
+      personality: 'judge',
+    });
+    const quoted = line('accuse', 'Gus is hiding something. Evidence, please.', accuseGus.act, {
+      personality: 'judge',
+    });
+    expect(buildPrompt(view, plain, 160).user).not.toContain('Evidence, please');
+    expect(buildPrompt(view, quoted, 160).user).toContain(
+      'Keep your catchphrase: "Evidence, please."',
+    );
+  });
+
   it('points out lines said to the bot since it last spoke', () => {
     const user = buildPrompt(viewFor(day2().state, 'p0'), accuseGus, 160).user;
     expect(user).toContain("Said to you since your last message: Bea: Ada, what's your role?");
@@ -669,6 +683,8 @@ describe('guardrails', () => {
 
   it('dragging in a player nobody mentioned is rejected; answering the asker is fine', () => {
     expect(checkReply('Gus and Eli are both lying.', ctx('p0', accuseGus))).toBe('new-name');
+    expect(checkReply('Eli, Dov: Gus dodges everything.', ctx('p0', accuseGus))).toBe('new-name');
+    expect(checkReply('Gus dodges everything. Right, Eli?', ctx('p0', accuseGus))).toBeNull();
     expect(
       checkReply('Bea, I suspect Gus. He dodges everything.', ctx('p0', accuseGus)),
     ).toBeNull();
@@ -691,6 +707,31 @@ describe('guardrails', () => {
       checkReply('Bea, I think Gus is lying. He dodges everything.', ctx('p0', accuseGus)),
     ).toBeNull();
     expect(checkReply('Gus is the one lying, Bea.', ctx('p0', accuseGus))).toBeNull();
+    expect(checkReply('Gus, Bea, is lying to us all.', ctx('p0', accuseGus))).toBeNull();
+    let g = act(day2(), 'p0', {
+      type: 'chat',
+      channel: 'public',
+      text: "I'm the Augur. Gus read Suspicious.",
+      meta: {
+        kind: 'claim',
+        role: 'augur',
+        results: [{ night: 1, target: 'p6', finding: 'suspicious' }],
+      },
+    });
+    g = act(g, 'p1', { type: 'chat', channel: 'public', text: 'ok' });
+    const repeat = line('defendSelf', 'Why me?', { kind: 'defend', target: 'p0' });
+    const view = viewFor(g.state, 'p0');
+    expect(
+      checkReply('Why me? I already read Gus as Suspicious.', {
+        view,
+        speech: repeat,
+        maxChars: 160,
+      }),
+    ).toBeNull();
+    const bluff = line('claim', "I'm the Mender.", { kind: 'claim', role: 'mender' });
+    expect(checkReply("I'm the Mender, and I healed Bea last night.", ctx('p5', bluff))).toBe(
+      'new-accusation',
+    );
   });
 
   it('a dead, revealed partner may come up when the chat is about them', () => {
@@ -746,6 +787,35 @@ describe('guardrails', () => {
     ).toBe('teammate-named');
     expect(
       checkReply('Watching from down here is agony.', { view, speech: banter, maxChars: 160 }),
+    ).toBeNull();
+  });
+
+  it('partners may be named in their own chat, and fellow ghosts in the dead chat', () => {
+    const night = until(day2(), 'night', 2);
+    const plan = line(
+      'mafiaAgree',
+      'Ada it is.',
+      { kind: 'plan', target: 'p0' },
+      { channel: 'mafia' },
+    );
+    const mafia = viewFor(night.state, 'p6');
+    expect(
+      checkReply('Fay, Ada it is. Quietly.', { view: mafia, speech: plan, maxChars: 160 }),
+    ).toBeNull();
+    const d = killGus(day2());
+    const banter = line(
+      'deadBanter',
+      'Watching is agony.',
+      { kind: 'banter' },
+      { channel: 'dead' },
+    );
+    const ghost = viewFor(d.state, 'p6');
+    expect(
+      checkReply('Cal and I have front-row seats now.', {
+        view: ghost,
+        speech: banter,
+        maxChars: 160,
+      }),
     ).toBeNull();
   });
 
