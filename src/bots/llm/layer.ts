@@ -399,31 +399,22 @@ export class ChatLayer {
       return { text: scripted, source: 'scripted', reason, ...extra };
     };
     const start = this.#clock();
-    if (!this.#ready() || !this.#enabled) return fallback('off');
-    if (this.#blocked)
-      return fallback(this.#blocked.state === 'degraded' ? 'unavailable' : this.#blocked.state);
-    if (start < this.#retryAt) return fallback('rate-limited');
-    if (start < this.#cooldownUntil) return fallback('unavailable');
-    if (this.#gameCalls >= this.limits.maxCallsPerGame) return fallback('budget');
-    this.#window = this.#window.filter((t) => t > start - 60_000);
-    const low = LOW_PRIORITY.has(speech.category);
-    if (
-      low &&
-      (this.#gameCalls >= this.limits.maxCallsPerGame * 0.75 ||
-        this.#window.length >= this.limits.maxCallsPerMinute * 0.7)
-    )
-      return fallback('skipped');
-    if (this.#window.length >= this.limits.maxCallsPerMinute) return fallback('busy');
+    const early = this.#gate(speech.category);
+    if (early) return fallback(early);
 
     const deadline = start + this.limits.timeoutMs;
     if (!(await this.#acquire(deadline, opts.signal)))
       return fallback(opts.signal?.aborted ? 'aborted' : 'busy');
     try {
+      // Other lines may have spent the budget, hit a limit, or failed while this
+      // one waited. Nothing awaits between this check and the count in #call.
+      const late = this.#gate(speech.category);
+      if (late) return fallback(late);
       const prompt = buildPrompt(view, speech, this.limits.maxChars);
       let out = await this.#call(prompt, deadline - this.#clock(), opts.signal);
       if (!out.ok && out.error.kind === 'bad-param') {
         this.#dropParam(out.error.param);
-        if (deadline - this.#clock() > 300)
+        if (deadline - this.#clock() > 300 && !this.#gate(speech.category))
           out = await this.#call(prompt, deadline - this.#clock(), opts.signal);
       }
       if (!out.ok) return fallback(reasonFor(out.error.kind));
@@ -597,6 +588,26 @@ export class ChatLayer {
   #dropParam(param: 'thinking' | 'effort' | undefined): void {
     if (param === 'thinking') this.#disableThinking = false;
     else this.#lowEffort = false;
+  }
+
+  /** Why a line must use its script right now, or null when Claude may be called. */
+  #gate(category: string): FallbackReason | null {
+    const now = this.#clock();
+    if (!this.#ready() || !this.#enabled) return 'off';
+    if (this.#blocked)
+      return this.#blocked.state === 'degraded' ? 'unavailable' : this.#blocked.state;
+    if (now < this.#retryAt) return 'rate-limited';
+    if (now < this.#cooldownUntil) return 'unavailable';
+    if (this.#gameCalls >= this.limits.maxCallsPerGame) return 'budget';
+    this.#window = this.#window.filter((t) => t > now - 60_000);
+    if (
+      LOW_PRIORITY.has(category) &&
+      (this.#gameCalls >= this.limits.maxCallsPerGame * 0.75 ||
+        this.#window.length >= this.limits.maxCallsPerMinute * 0.7)
+    )
+      return 'skipped';
+    if (this.#window.length >= this.limits.maxCallsPerMinute) return 'busy';
+    return null;
   }
 
   #acquire(deadline: number, signal?: AbortSignal): Promise<boolean> {
