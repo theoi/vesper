@@ -45,6 +45,8 @@ export interface LobbyView {
   validation: SetupValidation;
   minSeats: number;
   maxSeats: number;
+  /** Games started in this room. A new number means a new game. */
+  round: number;
 }
 
 export function cleanName(raw: string): string {
@@ -77,6 +79,7 @@ export function lobbyView(
   status: LobbyStatus,
   seats: readonly LobbySeat[],
   settings: LobbySettings,
+  round = 0,
 ): LobbyView {
   const roles = rolesFor(settings, seats.length);
   return {
@@ -90,6 +93,7 @@ export function lobbyView(
     validation: validateRoleList(roles, seats.length),
     minSeats: MIN_PLAYERS,
     maxSeats: MAX_PLAYERS,
+    round,
   };
 }
 

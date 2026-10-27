@@ -94,3 +94,58 @@ export function logLines(p: Player): Promise<string[]> {
 export async function closeAll(players: Player[]): Promise<void> {
   await Promise.all(players.map((p) => p.context.close().catch(() => undefined)));
 }
+
+/**
+ * Split one player's received messages by game, using the lobby messages
+ * around them: a game runs from its start (`lobby.round` = N) until the host
+ * returns everyone to the lobby. Messages outside any game go under 0.
+ */
+export function messagesByGame<T extends HostMessage | { msg: HostMessage }>(
+  items: readonly T[],
+): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  let round = 0;
+  for (const item of items) {
+    const x: HostMessage | { msg: HostMessage } = item;
+    const m = 'msg' in x ? x.msg : x;
+    if (m.t === 'lobby') round = m.lobby.status === 'open' ? 0 : m.lobby.round;
+    const list = out.get(round) ?? [];
+    list.push(item);
+    out.set(round, list);
+  }
+  return out;
+}
+
+export interface GameSecrets {
+  log: GameEvent[];
+  tokens: Record<string, PlayerId>;
+}
+
+/**
+ * Keep each finished game's log and tokens as the host returns to the lobby,
+ * so a rematch can still be audited game by game (host page only).
+ */
+export function keepFinishedGames(host: Player): Promise<void> {
+  return host.page.evaluate(() => {
+    const h = window.__vesper!.host!;
+    const w = window as unknown as { __finished: unknown[] };
+    w.__finished = [];
+    const back = h.backToLobby.bind(h);
+    h.backToLobby = () => {
+      const d = h.debugState();
+      if (h.snapshot().status === 'ended' && d.game) {
+        w.__finished.push(JSON.parse(JSON.stringify({ log: d.game.log, tokens: d.tokens })));
+      }
+      back();
+    };
+  });
+}
+
+/** Every game's secrets so far, in order: the finished ones, then the current one. */
+export async function allGameSecrets(host: Player): Promise<GameSecrets[]> {
+  const finished = await host.page.evaluate(
+    () => (window as unknown as { __finished?: GameSecrets[] }).__finished ?? [],
+  );
+  const current = await hostSecrets(host);
+  return current.log.length > 0 ? [...finished, current] : finished;
+}

@@ -189,8 +189,15 @@ export class ClientSession implements GameSession {
             : msg.lobby.status === 'playing'
               ? 'playing'
               : 'ended';
-        const view = msg.lobby.status === 'open' ? null : this.store.get().view;
-        this.store.set({ lobby: msg.lobby, status, view });
+        // Back in the lobby or on to a new game: the old game's view is done. A
+        // reconnect can skip the lobby in between, so the round number decides too.
+        const prev = this.store.get().lobby;
+        const over = msg.lobby.status === 'open' || (!!prev && prev.round !== msg.lobby.round);
+        this.store.set({
+          lobby: msg.lobby,
+          status,
+          ...(over ? { view: null, lastRejection: null } : {}),
+        });
         return;
       }
       case 'view':
