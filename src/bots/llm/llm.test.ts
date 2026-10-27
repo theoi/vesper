@@ -433,6 +433,55 @@ describe('budget and rate limits', () => {
     expect((await b).source).toBe('claude');
     expect(m2.calls).toHaveLength(2);
   });
+
+  it('never goes past the per-game budget when lines start together or wait for a slot', async () => {
+    const view = viewFor(day2().state, 'p0');
+    const m = mock(() => okReply('Gus, explain yourself.'));
+    const wide = new ChatLayer({ apiKey: KEY, fetch: m.fetch, maxCallsPerGame: 1 });
+    const together = await Promise.all([1, 2, 3].map(() => wide.rewrite(view, accuseGus)));
+    expect(together.map((r) => r.reason ?? r.source)).toEqual(['claude', 'budget', 'budget']);
+    expect(m.calls).toHaveLength(1);
+    expect(wide.callsThisGame).toBe(1);
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const m2 = mock(async (_c, n) => {
+      if (n === 1) await gate;
+      return okReply('Gus, explain yourself.');
+    });
+    const narrow = new ChatLayer({
+      apiKey: KEY,
+      fetch: m2.fetch,
+      maxCallsPerGame: 2,
+      maxConcurrent: 1,
+      timeoutMs: 5000,
+    });
+    const queued = [1, 2, 3].map(() => narrow.rewrite(view, accuseGus));
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    const results = await Promise.all(queued);
+    expect(results.map((r) => r.reason ?? r.source)).toEqual(['claude', 'claude', 'budget']);
+    expect(m2.calls).toHaveLength(2);
+    expect(narrow.callsThisGame).toBe(2);
+  });
+
+  it('a line waiting for a slot does not call once the key is rejected', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const m = mock(async () => {
+      await gate;
+      return apiError(401, 'authentication_error', 'invalid x-api-key');
+    });
+    const layer = new ChatLayer({ apiKey: KEY, fetch: m.fetch, maxConcurrent: 1, timeoutMs: 5000 });
+    const view = viewFor(day2().state, 'p0');
+    const first = layer.rewrite(view, accuseGus);
+    const second = layer.rewrite(view, accuseGus);
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    expect((await first).reason).toBe('invalid-key');
+    expect((await second).reason).toBe('invalid-key');
+    expect(m.calls).toHaveLength(1);
+  });
 });
 
 describe('fallbacks', () => {
