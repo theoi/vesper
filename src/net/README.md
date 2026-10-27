@@ -25,3 +25,12 @@ See `ledger/evidence/net/webrtc-pilot.md` in the mission space for the signaling
 - Never send `GameState`, the seed, or another player's view to a client. Every client message goes through `ViewChannel.next`, which calls `viewFor` for that player only.
 - The host's own seat uses the same `ViewChannel` path, so host and client UIs see identical data.
 - Will and death-note edits emit no events; `ViewChannel` still sends the change because it diffs the whole view.
+- The host loop, the client-silence sweep, and client pings run on Worker-backed timers (`timers.ts`), so a hidden host tab keeps the game on time.
+
+## Host reload resume
+
+- `HostSession.save()` returns the room as JSON-safe data: code, host id, seats, settings, game state, bot states, seat tokens, bans, and the bot transcript. It holds every secret, so it stays in the host's own browser. `parseHostSave` checks a save read back from storage.
+- `suspend()` stops the host without sending `closed` and closes the transport, so the signaling server lets go of the room id. `leave()` still tells everyone the game ended.
+- `new HostSession({ resume: save, ... })` restores the room. Human seats start disconnected and keep their tokens. `open()` keeps the same code. If it gets `roomTaken` (the old page's id can linger for a moment), it retries every 2 s up to 8 times instead of picking a new code.
+- Clients treat `roomNotFound` during their 30 s reconnect window as "the host may be reloading" and keep retrying. When the window ends, they show "The host left" if the room was missing on any attempt, or "Lost the connection" otherwise. The cost is that friends learn about a host who really closed the tab after about 30 s, not at once.
+- `fallback.ts` rejects the whole room with `roomTaken` if any transport reports it. Opening on the others would send friends who try that transport first to a different room with the same code.

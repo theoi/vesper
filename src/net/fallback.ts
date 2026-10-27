@@ -30,6 +30,12 @@ class FallbackHost implements HostTransport {
 
   async open(): Promise<void> {
     const results = await Promise.allSettled(this.parts.map((p) => p.open()));
+    // Another room holds this code on one transport. Opening on the others would
+    // send friends who try that transport first to the wrong room.
+    if (results.some((r) => r.status === 'rejected' && toNetError(r.reason).code === 'roomTaken')) {
+      for (const p of this.parts) p.close();
+      throw new NetError('roomTaken');
+    }
     this.live = this.parts.map((p, i) => (results[i]?.status === 'fulfilled' ? p : null));
     this.live.forEach((p, i) => {
       if (!p) return;

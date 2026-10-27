@@ -17,7 +17,9 @@ export * from './lobby.ts';
 export * from './room.ts';
 export {
   HostSession,
+  parseHostSave,
   type BotLine,
+  type HostSave,
   type HostOptions,
   type SpeechRewrite,
   type SpeechRewriter,

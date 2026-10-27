@@ -248,20 +248,23 @@ export class ClientSession implements GameSession {
   private async reconnect(): Promise<void> {
     const deadline = Date.now() + RECONNECT_WINDOW_MS;
     let delay = 500;
+    let roomGone = false;
     while (!this.terminal && Date.now() < deadline) {
       try {
         await this.connectOnce();
         return;
       } catch (e) {
-        if (toNetError(e).code === 'roomNotFound') {
-          this.fail('closed', 'hostLeft', HOST_LEFT);
-          return;
-        }
+        // A missing room may be the host's page reloading: it reopens the same
+        // code, so keep trying until the window closes. Once the room has been
+        // missing, a later network error doesn't change what happened.
+        if (toNetError(e).code === 'roomNotFound') roomGone = true;
       }
       await sleep(delay);
       delay = Math.min(delay * 2, 4000);
     }
-    if (!this.terminal) this.fail('closed', 'lost', LOST);
+    if (this.terminal) return;
+    if (roomGone) this.fail('closed', 'hostLeft', HOST_LEFT);
+    else this.fail('closed', 'lost', LOST);
   }
 
   private fail(status: 'closed' | 'error', code: string, message: string, close = true): void {
