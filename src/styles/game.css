@@ -1,0 +1,1026 @@
+/* The game: stage, top bar, prompt bar, chat column and the curtain call. */
+
+.vx .vx-game {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 420px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'top chat'
+    'stage chat'
+    'prompt chat';
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+/* --- top bar ---------------------------------------------------------------------- */
+
+.vx .vx-top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 8px 14px 8px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(180deg, #120e0b, #0e0b09);
+}
+
+.vx[data-phase='night'] .vx-top,
+.vx[data-phase='night'] .vx-prompt {
+  background: linear-gradient(180deg, #0d1422, #0a0f19);
+}
+
+.vx .vx-top-when {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.vx .vx-phase {
+  color: var(--paper);
+  font: 400 18px/1.1 var(--f-title);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The timer is a wick burning down, with the seconds beside it. */
+.vx .vx-timer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vx .vx-wick {
+  position: relative;
+  flex: 1;
+  min-width: 110px;
+  height: 3px;
+  background: rgba(230, 204, 154, 0.16);
+}
+
+.vx .vx-wick-left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(230, 204, 154, 0.5), var(--linen));
+  transition: width 0.25s linear;
+}
+
+.vx .vx-wick-left::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -4px;
+  width: 8px;
+  height: 12px;
+  margin-top: -9px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(ellipse at 50% 70%, #fff6d8, var(--gold) 60%, rgba(233, 164, 67, 0));
+  box-shadow: 0 0 10px 3px rgba(247, 207, 120, 0.45);
+}
+
+.vx[data-phase='night'] .vx-wick-left::after {
+  background: radial-gradient(
+    ellipse at 50% 70%,
+    #ffffff,
+    var(--night) 60%,
+    rgba(157, 185, 230, 0)
+  );
+  box-shadow: 0 0 10px 3px rgba(157, 185, 230, 0.45);
+}
+
+.vx .vx-secs {
+  min-width: 3ch;
+  color: var(--silver);
+  font: 500 16px/1 var(--f-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.vx .vx-timer.is-low .vx-secs {
+  color: var(--gold-hi);
+}
+
+.vx .vx-timer.is-low .vx-wick-left::after {
+  animation: vx-flicker 0.5s ease-in-out infinite alternate;
+}
+
+.vx .vx-role-chip {
+  display: grid;
+  gap: 1px;
+  padding: 5px 14px 6px;
+  border: 1px solid rgba(233, 164, 67, 0.6);
+  border-radius: 999px;
+  color: var(--paper);
+  background: rgba(233, 164, 67, 0.08);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vx .vx-role-chip:hover,
+.vx .vx-role-chip:focus-visible {
+  background: rgba(233, 164, 67, 0.18);
+  outline: none;
+}
+
+.vx .vx-role-chip[data-faction='mafia'] {
+  border-color: #b9483e;
+  background: rgba(125, 34, 34, 0.28);
+}
+
+.vx .vx-role-chip[data-faction='neutral'] {
+  border-color: rgba(157, 185, 230, 0.7);
+  background: rgba(157, 185, 230, 0.1);
+}
+
+.vx .vx-role-chip.is-dead .vx-role-name::before {
+  content: '† ';
+}
+
+.vx .vx-role-kicker {
+  color: var(--silver-dim);
+  font: 400 15px/1 var(--f-title);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.vx .vx-role-name {
+  font: italic 400 18px/1.15 var(--f-title);
+}
+
+.vx .vx-claude-line {
+  color: var(--silver-dim);
+  font-size: 15px;
+}
+
+.vx .vx-top-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.vx .vx-top-tools .tk {
+  margin-left: 6px;
+}
+
+/* --- stage ------------------------------------------------------------------------ */
+
+.vx .vx-stage {
+  grid-area: stage;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.vx[data-phase='night'] .vx-stage-host > .stage-stub {
+  background: radial-gradient(ellipse 70% 62% at 50% 38%, #4a6488, #1d2a44 55%, #070b14);
+}
+
+/* --- prompt bar ------------------------------------------------------------------- */
+
+.vx .vx-prompt {
+  grid-area: prompt;
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-height: 76px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+  background: linear-gradient(180deg, #120e0b, #0b0907);
+}
+
+.vx .vx-prompt-main {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* An intertitle pill: what you can do now. */
+.vx .vx-cue {
+  justify-self: start;
+  padding: 7px 18px;
+  border: 1px solid var(--rule);
+  outline: 1px solid rgba(230, 204, 154, 0.12);
+  outline-offset: 3px;
+  color: var(--paper);
+  background: rgba(14, 11, 9, 0.92);
+  font: italic 400 19px/1.3 var(--f-title);
+}
+
+.vx .vx-cue:empty {
+  display: none;
+}
+
+.vx .vx-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.vx .vx-meter-bar {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  background: rgba(230, 204, 154, 0.16);
+}
+
+.vx .vx-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--gold), #d9573f);
+  transition: width 0.3s ease;
+}
+
+.vx .vx-meter-label {
+  color: var(--silver);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vx .vx-targets {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+  order: 3;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.vx .vx-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 36px;
+  padding: 0.3em 0.9em;
+  border: 1px solid rgba(230, 204, 154, 0.4);
+  border-radius: 999px;
+  color: var(--paper);
+  background: rgba(230, 204, 154, 0.06);
+  font: 500 15px/1 var(--f-ui);
+  cursor: pointer;
+}
+
+.vx .vx-target:hover,
+.vx .vx-target:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  background: rgba(230, 204, 154, 0.14);
+}
+
+.vx .vx-target.is-chosen {
+  border-color: var(--accent-hi);
+  color: var(--ink);
+  background: var(--accent);
+}
+
+.vx .vx-target-votes {
+  min-width: 1.5em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--paper);
+  background: #8e2a26;
+  font-size: 13px;
+  text-align: center;
+}
+
+.vx .vx-trial {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 14px;
+  border: 1px solid rgba(232, 138, 124, 0.45);
+  background: rgba(125, 34, 34, 0.2);
+}
+
+.vx .vx-trial-head {
+  display: grid;
+}
+
+.vx .vx-trial-who {
+  color: var(--paper);
+  font: 400 17px/1.2 var(--f-title);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vx .vx-trial-count {
+  color: var(--silver-dim);
+  font-size: 15px;
+}
+
+.vx .vx-trial-count:empty {
+  display: none;
+}
+
+.vx .vx-trial-ballots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vx .vx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* --- chat column ------------------------------------------------------------------ */
+
+.vx .vx-chat {
+  grid-area: chat;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid #000;
+  background: linear-gradient(180deg, #16110d, #100c09);
+  box-shadow: inset 1px 0 0 rgba(230, 204, 154, 0.1);
+}
+
+.vx .vx-mates {
+  margin: 12px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(185, 72, 62, 0.6);
+  background: rgba(125, 34, 34, 0.22);
+}
+
+.vx .vx-mates h3 {
+  margin-bottom: 4px;
+  color: var(--oxblood-hi);
+  font: 400 15px/1.2 var(--f-title);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.vx .vx-mates ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx .vx-mates li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--paper);
+}
+
+.vx .vx-mates li.is-dead {
+  color: var(--silver-dim);
+}
+
+.vx .vx-mate-role {
+  color: var(--silver);
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-secret-target {
+  margin: 12px 12px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(157, 185, 230, 0.5);
+  color: var(--paper);
+  background: rgba(157, 185, 230, 0.08);
+}
+
+.vx .vx-chat-head {
+  padding: 12px 12px 0;
+}
+
+.vx .vx-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.vx .vx-tab {
+  position: relative;
+  min-height: 40px;
+  padding: 0.4em 0.9em;
+  border: 0;
+  color: var(--silver-dim);
+  background: none;
+  font: 400 15px/1 var(--f-title);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.vx .vx-tab:hover {
+  color: var(--paper);
+}
+
+.vx .vx-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.vx .vx-tab[aria-selected='true'] {
+  color: var(--paper);
+}
+
+.vx .vx-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.vx .vx-tab.ch-mafia[aria-selected='true']::after {
+  background: #c4473c;
+}
+
+.vx .vx-tab.ch-dead[aria-selected='true']::after {
+  background: var(--night);
+}
+
+.vx .vx-tabs-none {
+  padding: 0.6em 0.4em;
+  color: var(--silver-dim);
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-feed {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 14px 12px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(230, 204, 154, 0.25) transparent;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22px);
+  mask-image: linear-gradient(180deg, transparent 0, #000 22px);
+}
+
+.vx .ln {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.vx .ln-chat {
+  padding: 4px 0;
+  color: var(--paper);
+  font: 400 16px/1.45 var(--f-ui);
+}
+
+.vx .ln-who {
+  color: var(--gold-hi);
+  font-weight: 600;
+}
+
+.vx .ln-chat.is-mine .ln-who {
+  color: var(--silver);
+}
+
+.vx .ln-where {
+  color: var(--silver-dim);
+  font-size: 15px;
+}
+
+.vx .ln-chat.ch-mafia .ln-who {
+  color: var(--oxblood-hi);
+}
+
+.vx .ln-chat.ch-mafia {
+  padding-left: 8px;
+  border-left: 2px solid #8e2a26;
+}
+
+.vx .ln-chat.ch-dead {
+  padding-left: 8px;
+  border-left: 2px solid var(--night);
+  color: #dfe7f4;
+}
+
+.vx .ln-chat.ch-dead .ln-who {
+  color: var(--night);
+}
+
+.vx .ln-chat.ch-whisper {
+  color: var(--silver);
+  font-style: italic;
+}
+
+/* System lines read like silent-film intertitles. */
+.vx .ln-sys {
+  padding: 3px 0;
+  color: var(--silver-dim);
+  font: italic 400 15px/1.4 var(--f-title);
+}
+
+.vx .ln-sys.ln-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 6px;
+  color: var(--linen);
+  font-style: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  justify-content: center;
+}
+
+.vx .ln-sys.ln-vote,
+.vx .ln-sys.ln-ballotCast,
+.vx .ln-sys.ln-whisperNotice {
+  color: #9a9286;
+}
+
+.vx .ln-sys.ln-trial,
+.vx .ln-sys.ln-verdict,
+.vx .ln-sys.ln-magistrateReveal,
+.vx .ln-sys.ln-dawn,
+.vx .ln-sys.ln-gameOver,
+.vx .ln-sys.ln-neutralWin {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  color: var(--paper);
+  background: rgba(230, 204, 154, 0.05);
+  font-size: 16px;
+  text-align: center;
+}
+
+.vx .ln-sys.ln-death {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(185, 72, 62, 0.55);
+  color: #f1d6cf;
+  background: rgba(125, 34, 34, 0.22);
+  font-size: 16px;
+}
+
+.vx .ln-will {
+  display: block;
+  margin-top: 6px;
+  color: var(--paper);
+  font: normal 400 15px/1.9 var(--f-hand);
+}
+
+.vx .ln-sys.is-secret {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--silver);
+}
+
+.vx .ln-sys.ln-roleAssigned {
+  color: var(--paper);
+  font-size: 16px;
+}
+
+.vx .vx-compose {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.vx .vx-whisper-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--silver);
+  font: italic 400 16px var(--f-title);
+}
+
+.vx .vx-whisper-row select {
+  flex: 1;
+  min-height: 36px;
+}
+
+.vx .vx-compose-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.vx .vx-chat-input {
+  min-width: 0;
+}
+
+.vx .vx-chat[data-channel='mafia'] .vx-chat-input {
+  border-bottom-color: #c4473c;
+}
+
+.vx .vx-chat[data-channel='dead'] .vx-chat-input {
+  border-bottom-color: var(--night);
+}
+
+.vx .vx-chat[data-channel='whisper'] .vx-chat-input {
+  font-style: italic;
+}
+
+.vx .vx-send {
+  min-height: 42px;
+  padding: 0.5em 1.1em;
+}
+
+.vx .vx-seance {
+  max-height: 30%;
+  padding: 10px 14px 12px;
+  overflow: auto;
+  border-top: 1px solid var(--rule);
+  background: linear-gradient(180deg, rgba(11, 19, 34, 0.5), rgba(11, 19, 34, 0.85));
+}
+
+.vx .vx-seance h3 {
+  margin-bottom: 6px;
+  color: var(--night);
+  font: 400 15px/1.2 var(--f-title);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.vx .vx-seance-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vx .vx-seance-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--silver);
+  font-size: 15px;
+}
+
+.vx .vx-seance-list li::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 14px;
+  margin-top: 4px;
+  border-radius: 1px;
+  background: #5d6675;
+}
+
+.vx .vx-seance-name {
+  flex: 1;
+}
+
+.vx .vx-seance-list li.is-you {
+  color: var(--paper);
+}
+
+.vx .vx-seance-role {
+  color: var(--silver-dim);
+  font: italic 400 15px var(--f-title);
+}
+
+/* --- curtain call ----------------------------------------------------------------- */
+
+.vx .vx-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background:
+    linear-gradient(
+      90deg,
+      #2a0808 0,
+      #6e1a17 6%,
+      rgba(110, 26, 23, 0.35) 14%,
+      transparent 22%,
+      transparent 78%,
+      rgba(110, 26, 23, 0.35) 86%,
+      #6e1a17 94%,
+      #2a0808 100%
+    ),
+    rgba(6, 4, 3, 0.62);
+  /* The playbill waits for the finale on the stage (about 5 s) to play out. */
+  animation: vx-fade 0.8s ease 5.2s both;
+}
+
+.vx .vx-curtain.is-collapsed {
+  inset: auto 0 0 0;
+  padding: 0;
+  background: none;
+}
+
+.vx .vx-curtain.is-collapsed .vx-curtain-card > :not(.vx-curtain-actions, .vx-curtain-head) {
+  display: none;
+}
+
+.vx .vx-curtain.is-collapsed .vx-curtain-card {
+  width: 100%;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vx .vx-curtain.is-collapsed .vx-curtain-head {
+  font-size: 22px;
+}
+
+.vx .vx-curtain-card {
+  width: min(560px, 100%);
+  padding: 28px 32px 24px;
+  border: 1px solid #000;
+  outline: 3px double rgba(40, 28, 16, 0.55);
+  outline-offset: -10px;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7);
+  text-align: center;
+}
+
+.vx .vx-curtain-head {
+  margin: 6px 0 4px;
+  color: #150e08;
+  font: 700 34px/1.15 var(--f-title);
+  text-wrap: balance;
+}
+
+.vx .vx-curtain[data-outcome='mafia'] .vx-curtain-head {
+  color: #7a1c19;
+}
+
+.vx .vx-curtain-reason {
+  color: #4b3a26;
+  font: italic 400 18px/1.4 var(--f-title);
+}
+
+.vx .vx-curtain-you {
+  margin-top: 10px;
+  font: 400 26px/1.7 var(--f-hand);
+}
+
+.vx .vx-curtain-you.is-won {
+  color: #7a4d0c;
+}
+
+.vx .vx-curtain-you.is-lost {
+  color: #4b3a26;
+}
+
+.vx .vx-curtain-winners {
+  margin: 4px 0 14px;
+  color: #3b2a1a;
+}
+
+.vx .vx-cast {
+  display: grid;
+  gap: 2px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.vx .vx-cast li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.vx .vx-cast-candle {
+  flex: none;
+  width: 7px;
+  height: 14px;
+  border-radius: 1px;
+  background: #9a8b74;
+}
+
+.vx .vx-cast li.is-won .vx-cast-candle {
+  background: linear-gradient(180deg, #fff2c8, var(--gold));
+  box-shadow: 0 -4px 8px rgba(233, 164, 67, 0.8);
+}
+
+.vx .vx-cast-name {
+  font: 400 17px/1.2 var(--f-title);
+}
+
+.vx .vx-cast li.is-dead .vx-cast-name {
+  color: #6b5a45;
+}
+
+.vx .vx-cast-role {
+  font: italic 400 17px/1.2 var(--f-title);
+}
+
+.vx .vx-cast-faction {
+  min-width: 6.5em;
+  color: #6b4f2c;
+  font-size: 15px;
+  text-align: right;
+}
+
+.vx .vx-cast li[data-faction='mafia'] .vx-cast-role,
+.vx .vx-cast li[data-faction='mafia'] .vx-cast-faction {
+  color: #7a1c19;
+}
+
+.vx .vx-cast li[data-faction='neutral'] .vx-cast-faction {
+  color: #2e4a72;
+}
+
+.vx .vx-curtain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.vx .vx-paper .vx-link {
+  color: #3b2a1a;
+  text-decoration-color: rgba(40, 28, 16, 0.5);
+}
+
+/* --- phones ----------------------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  /* Under pressure the stage gives way first, so the chat input stays reachable. */
+  .vx .vx-game {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(110px, 36vh) minmax(190px, 1fr) auto;
+    grid-template-areas:
+      'top'
+      'stage'
+      'chat'
+      'prompt';
+  }
+
+  .vx[data-phase='ended'] .vx-game {
+    grid-template-rows: auto minmax(110px, 64vh) minmax(160px, 1fr) auto;
+  }
+
+  .vx .vx-top {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    min-height: 0;
+    padding: 6px 10px;
+  }
+
+  .vx .vx-top-when {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vx .vx-phase {
+    font-size: 16px;
+  }
+
+  .vx .vx-role-chip {
+    padding: 3px 12px 4px;
+  }
+
+  .vx .vx-top-tools {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  .vx .vx-top-tools .vx-volume,
+  .vx .vx-top .vx-bar-fill {
+    display: none;
+  }
+
+  .vx .vx-tool {
+    min-height: 34px;
+    padding: 0.2em 0.35em;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    font-size: 16px;
+  }
+
+  .vx .vx-top-tools .tk {
+    margin-left: 0;
+  }
+
+  .vx .vx-chat {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .vx .vx-chat-head {
+    padding: 2px 10px 0;
+  }
+
+  .vx .vx-tab {
+    min-height: 36px;
+  }
+
+  .vx .vx-feed {
+    padding: 6px 12px 8px;
+  }
+
+  .vx .vx-compose {
+    padding: 6px 10px 8px;
+  }
+
+  .vx .vx-mates,
+  .vx .vx-secret-target {
+    margin: 6px 10px 0;
+    padding: 4px 10px;
+  }
+
+  .vx .vx-mates {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+  }
+
+  .vx .vx-mates h3 {
+    margin: 0;
+  }
+
+  .vx .vx-mates ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+  }
+
+  .vx .vx-mates li {
+    gap: 6px;
+  }
+
+  .vx .vx-prompt {
+    min-height: 0;
+    max-height: 38dvh;
+    overflow-y: auto;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .vx .vx-cue {
+    padding: 4px 12px;
+    font-size: 17px;
+  }
+
+  .vx .vx-prompt-main {
+    flex-basis: 100%;
+  }
+
+  /* The stage is the place to pick on a phone; the chip row would crowd out the chat. */
+  .vx .vx-targets {
+    display: none;
+  }
+
+  .vx .vx-trial {
+    flex: 1 1 100%;
+    padding: 6px 10px;
+  }
+
+  /* The cue already names the defendant, and the Whisper tab sits in the chat. */
+  .vx .vx-trial-head,
+  .vx .vx-whisper-btn,
+  .vx .vx-seance {
+    display: none;
+  }
+
+  .vx .vx-actions {
+    margin-left: 0;
+  }
+
+  .vx .vx-actions .tk,
+  .vx .vx-trial .tk {
+    min-height: 38px;
+    padding: 0.4em 0.9em;
+  }
+
+  .vx .vx-curtain {
+    padding: 10px;
+  }
+
+  .vx .vx-curtain-card {
+    padding: 20px 18px;
+  }
+
+  .vx .vx-curtain-head {
+    font-size: 26px;
+  }
+}
