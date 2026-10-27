@@ -89,6 +89,11 @@ test.describe('online play @online', () => {
     // Hidden-information audit over every message each friend's browser received.
     const secrets = await hostSecrets(host);
     expect(secrets.log.length).toBeGreaterThan(0);
+    const summary: Record<string, unknown> = {
+      transport: process.env.NET ?? 'default',
+      hostEvents: secrets.log.length,
+      result: secrets.log.find((e) => e.type === 'gameOver'),
+    };
     for (const [p, before] of [
       [ari, []],
       [bo, boLogBefore],
@@ -102,7 +107,13 @@ test.describe('online play @online', () => {
         tokens: secrets.tokens,
       });
       expect(problems).toEqual([]);
+      summary[p.name] = {
+        messages: messages.length,
+        views: messages.filter((m) => m.t === 'view').length,
+        auditProblems: problems.length,
+      };
     }
+    console.log(`E2E-SUMMARY ${JSON.stringify(summary)}`);
 
     // The host leaves: friends get a clear message.
     await host.page.close();
