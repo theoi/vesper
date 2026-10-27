@@ -30,12 +30,13 @@ export function gameFrame(ctx: UiContext): Frame {
     const v = view;
     if (!v) return NO_PICK;
     const a = v.allowed;
+    // A vote outranks an open whisper: during voting the recipient comes from the chat's To field.
+    if (a.voteTargets.length) {
+      return { mode: 'vote', targets: a.voteTargets, chosen: v.you.vote ? [v.you.vote] : [] };
+    }
     if (chat.whisperOpen() && a.whisperTo.length) {
       const to = chat.recipient();
       return { mode: 'whisper', targets: a.whisperTo, chosen: to ? [to] : [] };
-    }
-    if (a.voteTargets.length) {
-      return { mode: 'vote', targets: a.voteTargets, chosen: v.you.vote ? [v.you.vote] : [] };
     }
     if (a.nightTargets.length) {
       return { mode: 'night', targets: a.nightTargets, chosen: v.you.nightTargets ?? [] };

@@ -504,6 +504,38 @@
   box-shadow: 0 0 22px rgba(255, 200, 120, 0.7);
 }
 
+/* Whisper mode reads as a different act from voting: silver, dashed, and a hush on the floor. */
+[data-pick='whisper'] .is-target .vs-cbtn::after {
+  border: 1px dashed rgba(214, 222, 236, 0.75);
+  box-shadow: 0 0 14px rgba(200, 212, 235, 0.3);
+}
+
+[data-pick='whisper'] .is-target .vs-cbtn:hover::after,
+[data-pick='whisper'] .is-target .vs-cbtn:focus-visible::after {
+  border-color: #f2f5fb;
+  box-shadow: 0 0 22px rgba(214, 224, 245, 0.65);
+}
+
+[data-pick='whisper'] .is-chosen .vs-mark {
+  border-radius: 50%;
+  rotate: 0deg;
+  background: #e8edf6;
+  box-shadow: 0 0 10px rgba(214, 224, 245, 0.9);
+}
+
+[data-pick='whisper'] .vs-candles::before {
+  content: '';
+  position: absolute;
+  inset: -40% -8% 0;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 62% 60% at 50% 100%,
+    rgba(190, 202, 226, 0.16),
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
 .vs-stage[data-phase='night'] .vs-candle:not(.is-dead) .vs-flame {
   scale: 0.75;
   filter: drop-shadow(0 0 5px rgba(200, 210, 255, 0.6))

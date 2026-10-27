@@ -114,6 +114,7 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
   let current: Channel | null = null;
   let tabsKey: string | null = null;
   let rcpt: PlayerId | null = null;
+  let phaseKey = '';
   let rendered = 0;
   let renderedFirstSeq = -1;
   let lastCue = 0;
@@ -163,6 +164,14 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
     opts.onComposerChange();
   };
 
+  // Whisper mode is a short aside: it ends once the whisper is sent or the phase moves on,
+  // so a later candle click never goes to a recipient picker by surprise.
+  const closeWhisper = () => {
+    if (current !== 'whisper') return;
+    rcpt = null;
+    setChannel(view?.allowed.chat[0] ?? null);
+  };
+
   channel.onchange = () => setChannel((channel.value || null) as Channel | null);
   toSelect.onchange = () => setRecipient(toSelect.value || null);
 
@@ -175,6 +184,7 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
         return;
       }
       c.whisper(rcpt, text);
+      closeWhisper();
     } else {
       c.chat(current, text);
     }
@@ -229,9 +239,11 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
           return b;
         }),
       );
-      if (!chans.length) tabs.append(h('span', { class: 'vx-tabs-none', text: 'Silence' }));
+      if (!chans.length) {
+        tabs.append(h('span', { class: 'vx-tabs-none', text: "You can't speak now" }));
+      }
     }
-    const next = current && chans.includes(current) ? current : (chans[0] ?? null);
+    const next = current && chans.includes(current) ? current : (v.allowed.chat[0] ?? null);
     if (rcpt && !v.allowed.whisperTo.includes(rcpt)) rcpt = null;
     const names = v.allowed.whisperTo.map((id) => `${id}:${nameOf(v, id)}`).join();
     if (toSelect.dataset.key !== names) {
@@ -328,8 +340,7 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
     setRecipient,
     toggleWhisper() {
       if (current === 'whisper') {
-        const fallback = view?.allowed.chat[0] ?? null;
-        setChannel(fallback);
+        closeWhisper();
       } else if (view?.allowed.whisperTo.length) {
         setChannel('whisper');
         input.focus();
@@ -337,6 +348,14 @@ export function createChat(ctx: UiContext, opts: { onComposerChange(): void }): 
     },
     update(v, s) {
       view = v;
+      const key = `${v.phase.kind}:${v.phase.day}`;
+      if (key !== phaseKey) {
+        phaseKey = key;
+        if (current === 'whisper') {
+          current = null;
+          rcpt = null;
+        }
+      }
       renderTabs(v);
       renderFeed(v);
       renderSide(v);
