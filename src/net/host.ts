@@ -13,6 +13,7 @@ import {
   type GameState,
   type Intent,
   type PlayerId,
+  type PhaseKind,
   type PlayerView,
   type StepResult,
 } from '../engine/index.ts';
@@ -45,16 +46,42 @@ import {
 } from './session.ts';
 import { NetError, toNetError, type HostTransport, type Transport } from './transport.ts';
 
+/** The outcome of rewriting one bot line. */
+export interface SpeechRewrite {
+  text: string;
+  source: 'claude' | 'scripted';
+  /** Why the scripted line was kept (e.g. 'off', 'timeout', 'budget'). */
+  reason?: string;
+}
+
 /**
- * Optional rewrite of a bot's chat line (the Claude layer). Resolve with new
- * text, or null to keep the scripted line. Rejections and timeouts fall back
- * to the scripted line.
+ * Optional rewrite of a bot's chat line (the Claude layer). Resolve with the
+ * new text (or a SpeechRewrite), or null to keep the scripted line.
+ * Rejections and timeouts fall back to the scripted line.
  */
 export type SpeechRewriter = (input: {
   bot: BotState;
   view: PlayerView;
   speech: BotSpeech;
-}) => Promise<string | null>;
+}) => Promise<SpeechRewrite | string | null>;
+
+/** One bot chat line as the host handled it. Host-only transcript; never sent to clients. */
+export interface BotLine {
+  at: number;
+  day: number;
+  phase: PhaseKind;
+  bot: PlayerId;
+  name: string;
+  channel: string;
+  /** The template category the scripted line came from. */
+  category: string;
+  scripted: string;
+  text: string;
+  source: 'claude' | 'scripted';
+  reason?: string;
+  /** False if the engine rejected the line (e.g. the phase changed while Claude was writing). */
+  delivered: boolean;
+}
 
 export interface HostOptions {
   hostName: string;
@@ -62,6 +89,10 @@ export interface HostOptions {
   transport: Transport | null;
   code?: string;
   rewriteSpeech?: SpeechRewriter;
+  /** Return false to skip the rewriter and apply scripted lines at once (e.g. no key). */
+  shouldRewrite?: () => boolean;
+  /** Called when a game starts (e.g. to reset a per-game Claude budget). */
+  onGameStart?: () => void;
   /** Called for every message sent to a client (tests and debugging). */
   onSend?: (playerId: PlayerId, msg: HostMessage) => void;
 }
@@ -69,6 +100,7 @@ export interface HostOptions {
 /** Delay before bots react to new events, so they don't answer instantly. */
 const BOT_REACT_MS = 400;
 const SPEECH_TIMEOUT_MS = 8000;
+const MAX_TRANSCRIPT = 3000;
 /** Drop a client that has sent nothing (not even a ping) for this long. */
 const CLIENT_SILENCE_MS = 15_000;
 const SWEEP_MS = 5000;
@@ -116,6 +148,10 @@ export class HostSession implements GameSession {
   private game: GameState | null = null;
   private bots = new Map<PlayerId, BotState>();
   private botsDirty = false;
+  /** Bumped per game so late Claude replies from an old game are dropped. */
+  private gameGen = 0;
+  private speechChain = new Map<PlayerId, Promise<void>>();
+  private transcript: BotLine[] = [];
   private channels = new Map<PlayerId, ViewChannel>();
   private tokens = new Map<string, PlayerId>();
   private banned = new Set<string>();
@@ -223,6 +259,11 @@ export class HostSession implements GameSession {
     return this.store.subscribe(listener);
   }
 
+  /** Every bot chat line this game, with whether Claude wrote it. Host only. */
+  botLines(): BotLine[] {
+    return this.transcript.slice();
+  }
+
   /** Host state for tests and debugging. Holds every secret; never send it anywhere. */
   debugState(): { game: GameState | null; tokens: Record<string, PlayerId> } {
     return { game: this.game, tokens: Object.fromEntries(this.tokens) };
@@ -296,6 +337,10 @@ export class HostSession implements GameSession {
       return e instanceof Error ? e.message : String(e);
     }
     this.game = result.state;
+    this.gameGen++;
+    this.speechChain.clear();
+    this.transcript = [];
+    this.opts.onGameStart?.();
     this.bots.clear();
     for (const seat of this.seats) {
       if (seat.kind === 'bot') this.bots.set(seat.id, createBot(seat.id, `${seed}:${seat.id}`));
@@ -312,6 +357,7 @@ export class HostSession implements GameSession {
   backToLobby(): void {
     if (this.status !== 'ended') return;
     this.game = null;
+    this.gameGen++;
     this.bots.clear();
     this.clearTimer();
     for (const ch of this.channels.values()) ch.reset();
@@ -382,38 +428,85 @@ export class HostSession implements GameSession {
       }
       this.bots.set(id, decision.bot);
       for (const intent of decision.intents) this.applyBot(id, intent, now);
+      const rewrite =
+        this.opts.rewriteSpeech && (this.opts.shouldRewrite?.() ?? true)
+          ? this.opts.rewriteSpeech
+          : null;
+      // The chat layer needs the bot's whole history, not the incremental view.
+      const fullView = rewrite && decision.speech.length > 0 ? viewFor(this.game, id) : null;
       for (const speech of decision.speech) {
-        if (this.opts.rewriteSpeech) this.rewriteThenSay(decision.bot, view, speech);
-        else this.applyBot(id, speech.intent, now);
+        if (rewrite && fullView) this.rewriteThenSay(rewrite, decision.bot, fullView, speech);
+        else
+          this.say(
+            id,
+            speech,
+            { text: speech.intent.text, source: 'scripted', reason: 'off' },
+            now,
+          );
       }
     }
   }
 
-  private applyBot(id: PlayerId, intent: Intent, now: number): void {
-    if (!this.game) return;
+  private applyBot(id: PlayerId, intent: Intent, now: number): boolean {
+    if (!this.game) return false;
     const r = applyIntent(this.game, id, intent, now);
-    if (r.error) return;
+    if (r.error) return false;
     this.game = r.state;
     if (r.events.length > 0) this.botsDirty = true;
+    return true;
   }
 
-  private rewriteThenSay(bot: BotState, view: PlayerView, speech: BotSpeech): void {
-    const rewrite = this.opts.rewriteSpeech;
-    if (!rewrite) return;
-    const timeout = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), SPEECH_TIMEOUT_MS),
+  private say(id: PlayerId, speech: BotSpeech, result: SpeechRewrite, now: number): void {
+    if (!this.game) return;
+    const delivered = this.applyBot(id, { ...speech.intent, text: result.text }, now);
+    if (this.transcript.length >= MAX_TRANSCRIPT) return;
+    this.transcript.push({
+      at: now,
+      day: this.game.phase.day,
+      phase: this.game.phase.kind,
+      bot: id,
+      name: this.seats.find((s) => s.id === id)?.name ?? id,
+      channel: speech.intent.type === 'whisper' ? 'whisper' : speech.intent.channel,
+      category: speech.category,
+      scripted: speech.intent.text,
+      text: result.text,
+      source: result.source,
+      ...(result.reason ? { reason: result.reason } : {}),
+      delivered,
+    });
+  }
+
+  private rewriteThenSay(
+    rewrite: SpeechRewriter,
+    bot: BotState,
+    view: PlayerView,
+    speech: BotSpeech,
+  ): void {
+    const gen = this.gameGen;
+    const scripted = speech.intent.text;
+    const timeout = new Promise<SpeechRewrite>((resolve) =>
+      setTimeout(
+        () => resolve({ text: scripted, source: 'scripted', reason: 'timeout' }),
+        SPEECH_TIMEOUT_MS,
+      ),
     );
-    Promise.race([rewrite({ bot, view, speech }), timeout])
-      .catch(() => null)
-      .then((text) => {
-        if (!this.game || this.closed) return;
-        const intent =
-          typeof text === 'string' && text.trim() ? { ...speech.intent, text } : speech.intent;
-        const now = Date.now();
-        this.catchUp(now);
-        this.applyBot(bot.id, intent, now);
-        this.afterStep();
-      });
+    const written: Promise<SpeechRewrite> = Promise.race([rewrite({ bot, view, speech }), timeout])
+      .then((r): SpeechRewrite => {
+        if (r && typeof r === 'object' && r.text.trim()) return r;
+        if (typeof r === 'string' && r.trim()) return { text: r, source: 'claude' };
+        return { text: scripted, source: 'scripted', reason: 'empty' };
+      })
+      .catch(() => ({ text: scripted, source: 'scripted', reason: 'error' }));
+    // Calls run in parallel, but each bot's lines are spoken in order.
+    const prev = this.speechChain.get(bot.id) ?? Promise.resolve();
+    const next = Promise.all([prev, written]).then(([, result]) => {
+      if (gen !== this.gameGen || !this.game || this.closed) return;
+      const now = Date.now();
+      this.catchUp(now);
+      this.say(bot.id, speech, result, now);
+      this.afterStep();
+    });
+    this.speechChain.set(bot.id, next);
   }
 
   /** Push views, update status, and schedule the next wake-up. */

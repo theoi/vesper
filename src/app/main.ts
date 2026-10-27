@@ -1,3 +1,4 @@
+import { DEFAULT_LIMITS } from '../bots/llm/index.ts';
 import { roomFromUrl, transportByName } from '../net/index.ts';
 import { AppController } from './controller.ts';
 import { mountShell } from './shell.ts';
@@ -13,8 +14,24 @@ const recordNet = (() => {
   }
 })();
 
+function browserStorage(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+// `?claudeCalls=N` lowers the per-game Claude call budget (cost control for tests).
+const claudeCalls = Number(params.get('claudeCalls'));
+
 const controller = new AppController({
   transport: () => transportByName(params.get('net')),
+  storage: browserStorage(),
+  claudeLimits:
+    Number.isInteger(claudeCalls) && claudeCalls > 0 && claudeCalls < DEFAULT_LIMITS.maxCallsPerGame
+      ? { maxCallsPerGame: claudeCalls }
+      : {},
   baseUrl: location.origin + location.pathname,
   linkCode: roomFromUrl(),
   recordNet,

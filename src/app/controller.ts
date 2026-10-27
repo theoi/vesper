@@ -1,3 +1,14 @@
+import {
+  ChatLayer,
+  STORAGE_KEYS,
+  clearSettings,
+  loadSettings,
+  saveSettings,
+  type ChatLimits,
+  type ChatStatus,
+  type FetchLike,
+  type KeyValueStore,
+} from '../bots/llm/index.ts';
 import type { Ballot, Intent, PlayerId } from '../engine/index.ts';
 import {
   ClientSession,
@@ -6,6 +17,7 @@ import {
   roomLink,
   saveName,
   savedName,
+  type BotLine,
   type GameSession,
   type HostMessage,
   type LobbySettings,
@@ -33,6 +45,24 @@ export interface AppState {
   /** Error to show on the home screen (bad code, etc.). */
   homeError: string | null;
   session: SessionSnapshot | null;
+  /** Claude bot chat (host only). Never contains the API key. */
+  claude: ClaudeState;
+}
+
+export interface ClaudeState {
+  status: ChatStatus;
+  hasKey: boolean;
+  /** The key is stored in this browser's localStorage (the host chose "remember"). */
+  remembered: boolean;
+  enabled: boolean;
+  model: string;
+  workspaceId: string | null;
+  callsThisGame: number;
+  maxCallsPerGame: number;
+  /** Bot lines offered to Claude this game, and how many Claude wrote. */
+  lines: number;
+  claudeLines: number;
+  costUsd: number | null;
 }
 
 export interface ControllerOptions {
@@ -44,6 +74,11 @@ export interface ControllerOptions {
   recordNet?: boolean;
   /** Keep the URL in sync with the joined room so a reload rejoins. */
   onRoomUrl?: (code: string | null) => void;
+  /** Where Claude settings persist (localStorage in the browser). */
+  storage?: KeyValueStore | null;
+  claudeLimits?: Partial<ChatLimits>;
+  /** For tests: replaces fetch for Anthropic calls. */
+  claudeFetch?: FetchLike;
 }
 
 type Listener = (state: AppState) => void;
@@ -55,8 +90,16 @@ export class AppController {
   private listeners = new Set<Listener>();
   /** Every message this browser received from a host, when recording is on. */
   readonly netLog: { at: number; msg: HostMessage }[] = [];
+  /** The Claude chat layer. It holds the key privately; nothing else does. */
+  private readonly chatLayer: ChatLayer;
 
   constructor(private readonly opts: ControllerOptions) {
+    const stored = opts.storage ? loadSettings(opts.storage) : {};
+    this.chatLayer = new ChatLayer({
+      ...stored,
+      ...opts.claudeLimits,
+      ...(opts.claudeFetch ? { fetch: opts.claudeFetch } : {}),
+    });
     this.state = {
       screen: 'home',
       name: savedName(),
@@ -64,7 +107,9 @@ export class AppController {
       link: null,
       homeError: null,
       session: null,
+      claude: this.claudeState(),
     };
+    this.chatLayer.subscribe(() => this.refreshClaude());
   }
 
   getState(): AppState {
@@ -96,6 +141,17 @@ export class AppController {
     const host = new HostSession({
       hostName: name,
       transport: opts.online ? this.opts.transport() : null,
+      rewriteSpeech: async ({ view, speech }) => {
+        const r = await this.chatLayer.rewrite(view, speech);
+        const reason = r.rule ? `guardrail:${r.rule}` : r.reason;
+        return { text: r.text, source: r.source, ...(reason ? { reason } : {}) };
+      },
+      shouldRewrite: () => this.chatLayer.settings.hasKey && this.chatLayer.settings.enabled,
+      onGameStart: () => {
+        this.chatLayer.newGame();
+        this.chatLayer.resetMetrics();
+        this.refreshClaude();
+      },
     });
     if (opts.seats) host.fillWithBots(opts.seats);
     this.attach(host);
@@ -153,7 +209,7 @@ export class AppController {
   private onSnapshot(snap: SessionSnapshot): void {
     const link =
       snap.isHost && snap.network.state !== 'open' ? null : roomLink(snap.code, this.opts.baseUrl);
-    this.set({ session: snap, link });
+    this.set({ session: snap, link, claude: this.claudeState() });
     if (snap.status === 'closed' || snap.status === 'error') this.opts.onRoomUrl?.(null);
   }
 
@@ -195,6 +251,87 @@ export class AppController {
 
   backToLobby(): void {
     this.host?.backToLobby();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Claude bot chat (host only)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Use this Anthropic API key for bot chat. It stays in this browser: in
+   * memory, and in localStorage only if `remember` is true. It is never sent
+   * to other players.
+   */
+  setClaudeKey(key: string | null, opts: { remember?: boolean } = {}): void {
+    this.chatLayer.configure({ apiKey: key });
+    if (this.opts.storage) {
+      saveSettings(this.opts.storage, { apiKey: key }, opts.remember ?? false);
+    }
+    this.refreshClaude();
+  }
+
+  setClaudeSettings(patch: {
+    model?: string;
+    workspaceId?: string | null;
+    enabled?: boolean;
+  }): void {
+    this.chatLayer.configure(patch);
+    if (this.opts.storage) {
+      const s = this.chatLayer.settings;
+      const remembered = this.opts.storage.getItem(STORAGE_KEYS.apiKey) !== null;
+      saveSettings(
+        this.opts.storage,
+        {
+          model: s.model,
+          workspaceId: s.workspaceId,
+          enabled: s.enabled,
+          apiKey: remembered ? this.opts.storage.getItem(STORAGE_KEYS.apiKey) : null,
+        },
+        remembered,
+      );
+    }
+    this.refreshClaude();
+  }
+
+  /** Send one tiny request to check the key. Resolves with the new status. */
+  async testClaude(): Promise<ChatStatus> {
+    const status = await this.chatLayer.check();
+    this.refreshClaude();
+    return status;
+  }
+
+  /** Remove the key from memory and from this browser. */
+  forgetClaude(): void {
+    this.chatLayer.configure({ apiKey: null });
+    if (this.opts.storage) clearSettings(this.opts.storage);
+    this.refreshClaude();
+  }
+
+  /** This game's bot lines, each tagged with whether Claude wrote it (host only). */
+  botTranscript(): BotLine[] {
+    return this.host?.botLines() ?? [];
+  }
+
+  private claudeState(): ClaudeState {
+    const s = this.chatLayer.settings;
+    const m = this.chatLayer.metrics();
+    return {
+      status: this.chatLayer.status(),
+      hasKey: s.hasKey,
+      remembered: this.opts.storage?.getItem(STORAGE_KEYS.apiKey) != null,
+      enabled: s.enabled,
+      model: s.model,
+      workspaceId: s.workspaceId,
+      callsThisGame: this.chatLayer.callsThisGame,
+      maxCallsPerGame: this.chatLayer.limits.maxCallsPerGame,
+      lines: m.lines,
+      claudeLines: m.claude,
+      costUsd: m.costUsd,
+    };
+  }
+
+  private refreshClaude(): void {
+    this.set({ claude: this.claudeState() });
   }
 
   // ---------------------------------------------------------------------------

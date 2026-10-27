@@ -7,6 +7,8 @@ test('solo play starts offline with bots @smoke', async ({ browser }) => {
     await hostRoom(me, { online: false });
     await expect(me.page.getByTestId('network-status')).toHaveText('Offline (solo)');
     await expect(me.page.getByTestId('seats').locator('li')).toHaveCount(7);
+    await expect(me.page.getByTestId('claude-panel')).toBeVisible();
+    await expect(me.page.getByTestId('claude-status')).toHaveAttribute('data-state', 'off');
     await me.page.getByTestId('pace').selectOption('fast');
     await me.page.getByTestId('start').click();
     await expect(me.page.getByTestId('screen-game')).toBeVisible();
