@@ -271,6 +271,27 @@
   white-space: nowrap;
 }
 
+/* A majority waits for the trial window: the fill breathes and the countdown warms. */
+.vx .vx-meter.is-waiting .vx-meter-fill {
+  animation: vx-wait 0.9s ease-in-out infinite alternate;
+}
+
+.vx .vx-meter.is-waiting .vx-meter-label {
+  color: var(--gold-hi);
+}
+
+@keyframes vx-wait {
+  to {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx .vx-meter.is-waiting .vx-meter-fill {
+    animation: none;
+  }
+}
+
 .vx .vx-targets {
   display: flex;
   flex: 1 1 100%;

@@ -1,4 +1,5 @@
 /** The sequence library: short staged scenes, each skippable, never blocking play. */
+import { deathPhrase, OUTCOME_HEADLINE } from '../../content/index.ts';
 import { ROLES, type NightAction, type PlayerId } from '../../engine/index.ts';
 import type { CueName, GameAudio } from '../contracts.ts';
 import { NIGHT_ACT, NIGHT_GAP, type Shade, type Stage } from '../stage/index.ts';
@@ -442,11 +443,14 @@ async function revealDeath(
     await t.wait(1100);
   }
   a.cue('reveal');
-  // The name is the headline: whoever glances at the card should know who died.
+  // The name is the headline: whoever glances at the card should know who died, and how.
+  const how = deathPhrase(d.causes).replace(/^was /, '');
+  const kicker = how.charAt(0).toUpperCase() + how.slice(1);
   s.film.card(
     d.embalmed || !d.role
       ? {
           face,
+          kicker,
           title: who,
           role: 'The coffin is closed',
           body: 'Someone took the name away.',
@@ -454,6 +458,7 @@ async function revealDeath(
         }
       : {
           face,
+          kicker,
           title: who,
           role: `the ${roleName(d.role)}`,
           body: ROLES[d.role].flavor,
@@ -659,18 +664,10 @@ async function finale({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'finale' }>): 
   a.setScene('end', { end: q.outcome, won: q.won });
   a.cue(q.won ? 'win' : 'lose');
   const titles = {
-    town: { title: 'The town prevails', tone: 'town' as const, body: 'Dawn floods the cloth.' },
-    mafia: {
-      title: 'The Syndicate prevails',
-      tone: 'mafia' as const,
-      body: 'The scrim burns, and the shadows bow.',
-    },
-    cutthroat: {
-      title: 'The Cutthroat stands alone',
-      tone: 'neutral' as const,
-      body: 'Every candle but one is out.',
-    },
-    draw: { title: 'A draw', tone: 'paper' as const, body: 'The lamp gutters out.' },
+    town: { tone: 'town' as const, body: 'Dawn floods the cloth.' },
+    mafia: { tone: 'mafia' as const, body: 'The scrim burns, and the shadows bow.' },
+    cutthroat: { tone: 'neutral' as const, body: 'Every candle but one is out.' },
+    draw: { tone: 'paper' as const, body: 'The lamp gutters out.' },
   }[q.outcome];
   s.cloth.look(q.outcome, 2600);
   if (q.outcome === 'town') {
@@ -712,7 +709,7 @@ async function finale({ t, s, a }: Ctx, q: Extract<SeqSpec, { id: 'finale' }>): 
   await t.wait(2600);
   s.film.card({
     kicker: q.won ? 'You win' : 'You lose',
-    title: titles.title,
+    title: OUTCOME_HEADLINE[q.outcome],
     body: titles.body,
     tone: titles.tone,
   });
