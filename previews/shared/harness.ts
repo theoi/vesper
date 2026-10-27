@@ -5,7 +5,7 @@ import './harness.css';
 export interface SceneCtx {
   /** Fresh container for this scene. It gets `.pv-leaving` when the scene exits, then is removed. */
   root: HTMLElement;
-  /** Run `fn` `ms` after the scene starts, unless the scene has been left. */
+  /** Run `fn` `ms` from now (scenes call this while entering), unless the scene has been left. */
   at(ms: number, fn: () => void): void;
   /** Run `fn` every `ms` until the scene is left. */
   every(ms: number, fn: () => void): void;

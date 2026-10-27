@@ -92,7 +92,7 @@ export function maskSVG(o: MaskOptions): string {
        <path d="M24 55 L22 58 M29 57 L28 60.5 M35 57 L35.5 60.5 M40 55 L42 58 M60 55 L58 58 M65 57 L64.5 60.5 M71 57 L72 60.5 M76 55 L78 58" stroke-width=".7"/></g>`
     : `<g fill="none" stroke="url(#${id}g)" stroke-width=".9"><path d="${eyeHole(32, tilt, 1)}"/><path d="${eyeHole(68, tilt, -1)}"/></g>`;
   const glow = o.glowEyes
-    ? `<g class="eye-glow"><ellipse cx="32" cy="${51 + tilt * 0.2}" rx="7" ry="3.4" fill="#ff3b2f"/><ellipse cx="68" cy="${51 + tilt * 0.2}" rx="7" ry="3.4" fill="#ff3b2f"/></g>`
+    ? `<g class="eye-glow" opacity="0"><ellipse cx="32" cy="${51 + tilt * 0.2}" rx="7" ry="3.4" fill="#ff3b2f"/><ellipse cx="68" cy="${51 + tilt * 0.2}" rx="7" ry="3.4" fill="#ff3b2f"/></g>`
     : '';
   return `<svg viewBox="0 0 100 130" xmlns="http://www.w3.org/2000/svg" class="mask-svg" aria-hidden="true">
   <defs>
@@ -119,7 +119,7 @@ export function maskSVG(o: MaskOptions): string {
         <path d="M20 ${41 - tilt * 0.3} Q32 ${33 + tilt * 0.5} 44 ${40}"/><path d="M56 40 Q68 ${33 + tilt * 0.5} 80 ${41 - tilt * 0.3}"/>
       </g>
       ${v % 9 === 7 ? '' : '<path d="M43 99 Q46.5 96 50 97.6 Q53.5 96 57 99 Q50 104 43 99Z" fill="#8c1c2c"/><path d="M43 99 Q50 100.5 57 99" stroke="#4a0d18" stroke-width=".5" fill="none"/>'}
-      <path class="night-shade" d="${FACE}" fill="#070a18"/>
+      <path class="night-shade" d="${FACE}" fill="#070a18" opacity="0"/>
     </g>
     ${closed}
     <path d="${FACE}" fill="none" stroke="url(#${id}g)" stroke-width="1.7"/>
