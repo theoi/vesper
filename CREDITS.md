@@ -39,7 +39,12 @@ characters are fictional. Source PNGs were resized and converted to WebP with ff
   kneeling, falling, voting, grieving, dancing, carrying a lantern, lying down), converted to
   transparent cut-outs.
 
-Any further images added by a direction are listed in its own section below.
+- **Séance table and objects** (`previews/seance/img/table.webp`, `hand.webp`, `candle-lit.webp`,
+  `candle-out.webp`): text prompts for a top-down round Victorian séance table in dark oak with an
+  oxblood velvet cloth (then an edit removing the centre candle dish), a pair of translucent
+  glowing spirit hands on black (one hand cropped and keyed to transparency), and a lit white
+  candle in a brass holder seen from above (then an edit of the same frame just blown out, with
+  smoke).
 
 ## Recorded samples (round-two previews, `previews/shared/samples/`)
 

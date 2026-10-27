@@ -7,7 +7,7 @@ import scrim from './scrim/img/anton-afraid.webp?url';
 import './index.css';
 
 // Directions that are merged and live; the others show as "in rehearsal".
-const LIVE = new Set(['supper']);
+const LIVE = new Set(['supper', 'seance', 'scrim']);
 const ART: Record<string, string> = { supper, seance, scrim };
 
 document.querySelectorAll<HTMLAnchorElement>('.panel').forEach((panel) => {
