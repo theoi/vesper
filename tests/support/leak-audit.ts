@@ -17,8 +17,11 @@ export function auditClientMessages(input: {
   messages: readonly HostMessage[];
   hostLog: readonly GameEvent[];
   tokens: Readonly<Record<string, PlayerId>>;
+  /** Strings no client may ever receive (e.g. the host's API key). Never echoed in problems. */
+  forbidden?: readonly string[];
 }): string[] {
   const { playerId, messages, hostLog, tokens } = input;
+  const forbidden = (input.forbidden ?? []).filter((s) => s.length >= 8);
   const problems: string[] = [];
   const strip = (e: GameEvent) => {
     const { seq: _seq, ...rest } = e;
@@ -36,6 +39,9 @@ export function auditClientMessages(input: {
     const json = JSON.stringify(msg);
     for (const token of tokenList) {
       if (json.includes(token)) problems.push(`#${i} ${msg.t}: contains a player token`);
+    }
+    if (forbidden.some((s) => json.includes(s))) {
+      problems.push(`#${i} ${msg.t}: contains a forbidden secret`);
     }
     for (const key of ['"rng":', '"originalRole":', '"deathsThisCycle":', '"ballots":{']) {
       if (json.includes(key)) problems.push(`#${i} ${msg.t}: contains host-only field ${key}`);
