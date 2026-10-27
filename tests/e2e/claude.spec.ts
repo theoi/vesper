@@ -22,6 +22,13 @@ const KEY = process.env.ANTHROPIC_API_KEY ?? '';
 const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID ?? '';
 const CALLS = Math.max(10, Math.min(200, Number(process.env.CLAUDE_E2E_CALLS ?? 60)));
 const OUT = 'test-results/claude';
+/** Opt-in workaround; see the route below. The evidence must say when it was used. */
+const RELAY = process.env.CLAUDE_E2E_RELAY === '1';
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': '*',
+  'access-control-allow-methods': 'POST, OPTIONS',
+};
 
 test.skip(!KEY, 'needs ANTHROPIC_API_KEY');
 
@@ -32,7 +39,7 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
   const host = await openPlayer(browser, 'Hana');
   const friend = await openPlayer(browser, 'Ari');
   const players: Player[] = [host, friend];
-  const summary: Record<string, unknown> = { callCap: CALLS };
+  const summary: Record<string, unknown> = { callCap: CALLS, relay: RELAY };
   try {
     const code = await hostRoom(host, { params: { claudeCalls: String(CALLS) } });
 
@@ -47,15 +54,54 @@ test('a host plays with Claude bots and one friend on the live site @claude', as
         input.dispatchEvent(new Event('change'));
       }, WORKSPACE);
     }
+    if (RELAY) {
+      // Workaround for keys whose Anthropic org blocks browser (CORS) requests: forward the
+      // browser's own request from Node without the Origin header. Everything else in the
+      // browser path (prompting, key handling, fallbacks) is unchanged.
+      await host.context.route('https://api.anthropic.com/**', async (route) => {
+        const req = route.request();
+        if (req.method() === 'OPTIONS') {
+          await route.fulfill({ status: 204, headers: CORS_HEADERS });
+          return;
+        }
+        const headers = { ...(await req.allHeaders()) };
+        delete headers.origin;
+        delete headers.referer;
+        const res = await route.fetch({ headers });
+        await route.fulfill({ response: res, headers: { ...res.headers(), ...CORS_HEADERS } });
+      });
+    }
+
+    // Diagnostics without the key: statuses, error bodies, and whether the exact key was sent.
+    const diag: Record<string, unknown>[] = [];
+    host.page.on('response', async (res) => {
+      if (!res.url().startsWith('https://api.anthropic.com/')) return;
+      const req = res.request();
+      if (req.method() !== 'POST') return;
+      const headers = req.headers();
+      const entry: Record<string, unknown> = {
+        status: res.status(),
+        sentExactKey: headers['x-api-key'] === KEY,
+        sentKeyLength: (headers['x-api-key'] ?? '').length,
+        keyLength: KEY.length,
+        workspaceHeader: 'anthropic-workspace-id' in headers,
+        headerNames: Object.keys(headers).sort(),
+      };
+      if (res.status() >= 400 && diag.length < 5) {
+        const body = (await res.text().catch(() => '')).slice(0, 300);
+        entry.body = KEY ? body.split(KEY).join('[key]') : body;
+      }
+      if (diag.length < 20) diag.push(entry);
+    });
+    summary.anthropic = diag;
+
     await host.page.getByTestId('claude-save').click();
-    await expect(host.page.getByTestId('claude-status')).toHaveAttribute(
-      'data-state',
-      /ok|invalid-key|degraded|rate-limited/,
-      {
-        timeout: 30_000,
-      },
-    );
-    summary.statusAfterKey = await host.page.getByTestId('claude-status').textContent();
+    const checked = await host.page.evaluate(async () => {
+      const s = await window.__vesper?.testClaude();
+      return s ? `${s.state}: ${s.detail}` : 'no controller';
+    });
+    summary.statusAfterKey = checked;
+    expect(checked, 'Claude status after entering the key').toMatch(/^ok:/);
     await expect(host.page.getByTestId('claude-status')).toHaveAttribute('data-state', 'ok');
     expect(await host.page.getByTestId('claude-key').inputValue()).toBe('');
 
