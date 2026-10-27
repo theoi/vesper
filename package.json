@@ -33,5 +33,11 @@
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@trystero-p2p/mqtt": "^0.26.0",
+    "@trystero-p2p/torrent": "^0.26.0",
+    "peerjs": "^1.5.5",
+    "trystero": "^0.26.0"
   }
 }
