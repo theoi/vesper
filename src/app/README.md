@@ -36,7 +36,7 @@ E2E tests drive the UI through these. Keep them when restyling (or update `tests
 - `?net=peerjs` or `?net=trystero-nostr` forces one transport (default: PeerJS with Trystero fallback).
 - `?claudeCalls=N` lowers the per-game Claude call budget (cost control for tests).
 - `?sw=0` unregisters the service worker and deletes its cache (debugging). A page the worker controls keeps using it until the page goes away, so the page first tells the worker to stop caching (`'off'`), unregisters it, reloads once to drop it, then deletes the cache.
-- `?ui=v2` mounts the new UI: `src/ui/index.ts` must export `mountUi(root, controller)` returning a dispose function, the same shape as `mountShell`. It loads as its own chunk; if it is missing or fails to load, the page logs it and shows the shell. `?ui=shell` or no parameter mounts the placeholder shell. `<html data-ui>` says which UI is mounted (`v2` or `shell`).
+- The game UI (`src/ui`) is the default: `src/ui/index.ts` exports `mountUi(root, controller)` returning a dispose function, the same shape as `mountShell`. It loads as its own chunk; if it fails to load, the page logs it and shows the shell. `?ui=shell` mounts the plain shell, the fallback for browsers where the stage doesn't work (`?ui=v2` is accepted and means the default). `<html data-ui>` says which UI is mounted (`v2` or `shell`). Share links carry the host page's `ui`, so a host on the shell invites friends to the shell.
 
 `data-testid` hooks:
 

@@ -41,6 +41,10 @@ jobs:
       - uses: ./.github/actions/setup-playwright
         timeout-minutes: 12
       - run: npx playwright test --grep @smoke
+      - name: Smoke on the fallback shell (?ui=shell)
+        run: npx playwright test --grep @smoke tests/e2e/solo.spec.ts tests/e2e/resume.spec.ts
+        env:
+          UI: shell
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
