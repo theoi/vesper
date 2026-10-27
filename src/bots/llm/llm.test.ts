@@ -11,8 +11,11 @@ import {
 } from '../../engine/testkit.ts';
 import type { PlayerId, RoleId, SpeechAct } from '../../engine/types.ts';
 import { viewFor } from '../../engine/view.ts';
+import { DEATH_NOTES, LINES, OPENERS, TEMPERAMENT_LINES } from '../lines.ts';
+import { PERSONALITIES } from '../personalities.ts';
 import type { BotSpeech } from '../types.ts';
 import { ANTHROPIC_URL, type FetchLike } from './client.ts';
+import { blockedTerm } from './guard.ts';
 import {
   ChatLayer,
   SYSTEM_PROMPT,
@@ -1000,5 +1003,21 @@ describe('settings storage', () => {
     expect(loadSettings(s).apiKey).toBeUndefined();
     clearSettings(s);
     expect(s.data.size).toBe(0);
+  });
+});
+
+describe('scripted lines', () => {
+  it('never use a word the guardrails block in Claude output', () => {
+    const texts = [
+      ...Object.values(LINES).flat(),
+      ...Object.values(TEMPERAMENT_LINES).flatMap((byCategory) =>
+        Object.values(byCategory ?? {}).flatMap((pool) => pool ?? []),
+      ),
+      ...Object.values(OPENERS).flat(),
+      ...DEATH_NOTES,
+      ...PERSONALITIES.flatMap((p) => (p.catchphrase ? [p.catchphrase] : [])),
+    ];
+    expect(texts.length).toBeGreaterThan(300);
+    for (const text of texts) expect(blockedTerm(text), text).toBeNull();
   });
 });
