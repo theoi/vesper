@@ -6,19 +6,17 @@ test('home page loads @smoke', async ({ page }) => {
   await expect(page.locator('#app')).not.toBeEmpty();
 });
 
-test('the shell is the default UI, and every ?ui= choice shows a home screen @smoke', async ({
-  page,
-}) => {
+test('the game UI is the default, and ?ui=shell is the fallback @smoke', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  for (const url of ['./', './?ui=shell']) {
+  for (const [url, ui] of [
+    ['./', 'v2'],
+    ['./?ui=v2', 'v2'],
+    ['./?ui=shell', 'shell'],
+  ] as const) {
     await page.goto(url);
-    await expect(page.locator('html')).toHaveAttribute('data-ui', 'shell');
+    await expect(page.locator('html')).toHaveAttribute('data-ui', ui);
     await expect(page.getByTestId('screen-home')).toBeVisible();
   }
-  // The new UI, or the shell if this build has none yet: never a blank page.
-  await page.goto('./?ui=v2');
-  await expect(page.locator('html')).toHaveAttribute('data-ui', /^(v2|shell)$/);
-  await expect(page.getByTestId('screen-home')).toBeVisible();
   expect(errors).toEqual([]);
 });

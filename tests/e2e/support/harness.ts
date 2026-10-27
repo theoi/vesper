@@ -18,12 +18,16 @@ export interface Player {
 
 /** `?net=` override, e.g. NET=trystero-nostr to exercise the fallback transport alone. */
 const NET = process.env.NET ? `net=${process.env.NET}` : '';
-/** `?ui=` override, e.g. UI=v2 to run a suite against the new UI. */
-export const UI = process.env.UI ?? '';
+/**
+ * `?ui=` override: UI=shell runs a suite against the fallback shell. Unset,
+ * pages open without `?ui`, as players do, and must mount the default UI.
+ */
+const UI_PARAM = process.env.UI ?? '';
+export const UI = UI_PARAM || 'v2';
 
 export function appUrl(params: Record<string, string> = {}): string {
   const q = new URLSearchParams(params).toString();
-  const all = [q, NET, UI ? `ui=${UI}` : ''].filter(Boolean).join('&');
+  const all = [q, NET, UI_PARAM ? `ui=${UI_PARAM}` : ''].filter(Boolean).join('&');
   return all ? `./?${all}` : './';
 }
 
@@ -44,9 +48,9 @@ export async function openPlayer(
   return { name, context, page, errors };
 }
 
-/** With UI set, make sure that UI mounted (the app falls back to the shell if it can't load). */
+/** Make sure the expected UI mounted (the app falls back to the shell if the game UI can't load). */
 async function expectUi(p: Player): Promise<void> {
-  if (UI) await expect(p.page.locator('html')).toHaveAttribute('data-ui', UI);
+  await expect(p.page.locator('html')).toHaveAttribute('data-ui', UI);
 }
 
 /** Host a room from the home screen; returns the room code. */

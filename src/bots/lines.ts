@@ -215,7 +215,7 @@ export const LINES: Record<Category, string[]> = {
   ],
   questionGeneric: [
     'Does anyone have information?',
-    'Investigators, now would be a good time.',
+    'If anyone can read roles, now would be a good time.',
     'Who has something real to share?',
     'Anyone see anything last night?',
     'Can we get some claims going?',
@@ -345,7 +345,7 @@ export const LINES: Record<Category, string[]> = {
     "Don't defend each other too hard.",
     "Vote with the crowd unless it's one of us.",
     'Nobody panic. They have nothing.',
-    'Watch for their investigator.',
+    'Watch for their Augur.',
     'Quiet and steady. We have time.',
   ],
   deadIntro: [
@@ -546,7 +546,7 @@ export const TEMPERAMENT_LINES: Partial<Record<Temperament, Partial<Record<Categ
     },
   };
 
-const OPENERS: Record<Temperament, string[]> = {
+export const OPENERS: Record<Temperament, string[]> = {
   calm: ['Okay.', 'Alright,', 'So,'],
   fiery: ['Seriously?', 'Listen!', 'Come on,'],
   anxious: ['Um,', 'Sorry, but', 'I mean,'],

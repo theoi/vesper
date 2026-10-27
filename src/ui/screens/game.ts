@@ -25,6 +25,7 @@ export function gameFrame(ctx: UiContext): Frame {
   const unPrefs = ctx.prefs.subscribe(applyMotion);
 
   let view: PlayerView | null = null;
+  let clockOffset = 0;
 
   const pickState = (): PickState => {
     const v = view;
@@ -86,7 +87,10 @@ export function gameFrame(ctx: UiContext): Frame {
     prompt.el,
     chat.el,
   );
-  const interval = setInterval(top.tick, TICK_MS);
+  const interval = setInterval(() => {
+    top.tick();
+    prompt.tick(Date.now() + clockOffset);
+  }, TICK_MS);
 
   return {
     el,
@@ -96,6 +100,7 @@ export function gameFrame(ctx: UiContext): Frame {
       const v = s?.view;
       if (!s || !v) return;
       view = v;
+      clockOffset = s.clockOffset;
       const root = ctx.root.dataset;
       root.phase = v.phase.kind;
       root.faction = v.you.faction;

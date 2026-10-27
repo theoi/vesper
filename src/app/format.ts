@@ -1,4 +1,4 @@
-import { SAVED_BY, deathPhrase, resultLine } from '../content/index.ts';
+import { NIGHT_VERB, SAVED_BY, deathPhrase, resultLine } from '../content/index.ts';
 import {
   ROLES,
   type GameEvent,
@@ -82,7 +82,7 @@ export function describeEvent(view: PlayerView, e: GameEvent): string | null {
         : 'You cancel your action.';
     case 'mafiaPick':
       return e.targets
-        ? `${n(e.player)} picks ${e.targets.map(n).join(', ')} (${e.kind}).`
+        ? `${n(e.player)} wants to ${NIGHT_VERB[e.kind]} ${e.targets.map(n).join(' and ')}.`
         : `${n(e.player)} cancels their pick.`;
     case 'death': {
       const role =

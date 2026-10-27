@@ -47,7 +47,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     const me = await openPlayer(browser, 'Solo');
     try {
       await me.page.emulateMedia({ reducedMotion: motion });
-      await hostRoom(me, { online: false, params: { ui: 'v2' } });
+      await hostRoom(me, { online: false });
       await expect(me.page.locator('html')).toHaveAttribute('data-ui', 'v2');
       await me.page.getByTestId('pace').selectOption('fast');
       await me.page.getByTestId('start').click();

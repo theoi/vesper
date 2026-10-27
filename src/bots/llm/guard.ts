@@ -147,6 +147,17 @@ export function cleanReply(raw: string, ctx: GuardContext): string {
   return t;
 }
 
+/**
+ * The word-level rule a text breaks on its own: talk about AI or prompts, a role
+ * name from another game, or a pet name. Scripted lines must never break one.
+ */
+export function blockedTerm(text: string): 'meta' | 'foreign-role' | 'pet-name' | null {
+  if (META.test(text)) return 'meta';
+  if (FOREIGN_ROLES.test(text)) return 'foreign-role';
+  if (PET_NAME.test(text)) return 'pet-name';
+  return null;
+}
+
 /** Return the first rule the line breaks, or null when it is safe to send. */
 export function checkReply(text: string, ctx: GuardContext): GuardRule | null {
   const { view, speech } = ctx;

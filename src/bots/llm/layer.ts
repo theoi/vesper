@@ -531,7 +531,7 @@ export class ChatLayer {
         this.#blocked = {
           state: 'browser-blocked',
           detail:
-            "This key's Anthropic organization blocks browser requests (custom data retention). Use a key from an organization without custom retention.",
+            "This key's Anthropic organization blocks browser requests (custom data retention). Use your own relay (choose My relay), or a key from an organization without custom retention.",
         };
         break;
       case 'workspace':

@@ -3,7 +3,13 @@
  * outcomes read in feed lines, cards, and the curtain call. Plain data with
  * `{token}` names filled from `src/engine/roles.ts`, like the help copy.
  */
-import type { DeathCause, GameResult, NightOutcome, NightResult } from '../engine/types.ts';
+import type {
+  DeathCause,
+  GameResult,
+  NightActionKind,
+  NightOutcome,
+  NightResult,
+} from '../engine/types.ts';
 import { fill } from './help.ts';
 
 /** What happened to someone, after their name: "Sabine was killed by the Syndicate." */
@@ -83,4 +89,19 @@ export const NIGHT_OUTCOME: Record<NightOutcome, string> = {
   framed: 'framed',
   embalmed: 'embalmed',
   armored: 'wore the vest',
+};
+
+/** The verb for each night ability: "Rook wants to kill Bram", "You will mark Cal tonight". */
+export const NIGHT_VERB: Record<NightActionKind, string> = {
+  investigate: 'read',
+  watch: 'watch',
+  heal: 'tend',
+  guard: 'guard',
+  shoot: 'shoot',
+  block: 'distract',
+  kill: 'kill',
+  frame: 'mark',
+  embalm: 'embalm',
+  stab: 'stab',
+  vest: 'wear the vest for',
 };

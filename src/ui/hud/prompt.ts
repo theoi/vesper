@@ -1,5 +1,5 @@
 import { nameOf } from '../../app/format.ts';
-import { fill } from '../../content/index.ts';
+import { fill, NIGHT_VERB, resultLine } from '../../content/index.ts';
 import { ROLES, type NightActionKind, type PlayerId, type PlayerView } from '../../engine/index.ts';
 import type { PickMode } from '../contracts.ts';
 import { h, setText, show, ticket } from '../dom.ts';
@@ -25,26 +25,23 @@ const NIGHT_ASK: Record<NightActionKind, string> = {
   vest: 'Put on your vest tonight?',
 };
 
-const NIGHT_VERB: Record<NightActionKind, string> = {
-  investigate: 'read',
-  watch: 'watch',
-  heal: 'tend',
-  guard: 'guard',
-  shoot: 'shoot',
-  block: 'distract',
-  kill: 'kill',
-  frame: 'mark',
-  embalm: 'embalm',
-  stab: 'stab',
-  vest: 'wear the vest for',
-};
+/** The name with the most votes and its weighted count. */
+function leader(tally: Map<PlayerId, number>): [PlayerId | null, number] {
+  let top: PlayerId | null = null;
+  let most = 0;
+  for (const [id, w] of tally) if (w > most) [top, most] = [id, w];
+  return [top, most];
+}
 
-const OUTCOME: Record<'town' | 'mafia' | 'cutthroat' | 'draw', string> = {
-  town: fill('The {town} prevails.'),
-  mafia: fill('The {mafia} prevails.'),
-  cutthroat: fill('The {cutthroat} stands alone.'),
-  draw: 'A draw. The lamp gutters out.',
-};
+/**
+ * Seconds until a trial may open (host time), while voting and the window is still shut;
+ * null otherwise. A majority reached before then waits for it.
+ */
+export function trialWaitS(view: PlayerView, now: number): number | null {
+  const at = view.trialOpensAt;
+  if (view.phase.kind !== 'voting' || at === null || now >= at) return null;
+  return Math.ceil((at - now) / 1000);
+}
 
 /** Weighted nomination votes per target. */
 export function tallyVotes(view: PlayerView): Map<PlayerId, number> {
@@ -69,7 +66,7 @@ export function promptText(view: PlayerView, pick: PickState): string {
   const n = (id: PlayerId | null | undefined) => nameOf(view, id);
   const you = view.you;
   const kind = view.phase.kind;
-  if (kind === 'ended' && view.result) return OUTCOME[view.result.outcome];
+  if (kind === 'ended' && view.result) return resultLine(view.result);
   if (pick.mode === 'whisper') {
     const to = pick.chosen[0];
     return to
@@ -132,6 +129,8 @@ export function promptText(view: PlayerView, pick: PickState): string {
 export interface PromptBar {
   el: HTMLElement;
   update(view: PlayerView, pick: PickState, whisperOpen: boolean): void;
+  /** Refresh the trial countdown; `now` is host time. */
+  tick(now: number): void;
 }
 
 export function createPromptBar(
@@ -194,27 +193,57 @@ export function createPromptBar(
   );
 
   let targetsKey = '';
+  let cueText = '';
+  /** Host clock minus local clock, learned from `tick`. */
+  let skew = 0;
+
+  // The meter counts down while the trial window is shut; the cue (read aloud) says it once.
+  const paintVote = (now: number) => {
+    const v = view;
+    if (!v || v.phase.kind !== 'voting') {
+      meter.classList.remove('is-waiting');
+      setText(cue, cueText);
+      return;
+    }
+    const [top, most] = leader(tallyVotes(v));
+    const need = v.voteThreshold;
+    const wait = trialWaitS(v, now);
+    const held = !!top && most >= need && wait !== null;
+    meterFill.style.width = `${Math.min(100, (most / Math.max(1, need)) * 100)}%`;
+    meter.classList.toggle('is-waiting', held);
+    const base = top ? `${nameOf(v, top)} ${most}/${need}` : `0/${need} votes`;
+    setText(
+      meterLabel,
+      wait === null
+        ? base
+        : held
+          ? `${base} · trial in ${wait}s`
+          : `${base} · a trial can open in ${wait}s`,
+    );
+    setText(
+      cue,
+      held && top
+        ? `${nameOf(v, top)} has the votes. The trial opens in a moment unless votes change.`
+        : cueText,
+    );
+  };
+
   return {
     el,
+    tick(now) {
+      skew = now - Date.now();
+      paintVote(now);
+    },
     update(v, pick, whisperOpen) {
       view = v;
       el.dataset.mode = pick.mode;
-      setText(cue, promptText(v, pick));
+      cueText = promptText(v, pick);
       const you = v.you;
 
       const voting = v.phase.kind === 'voting';
       show(meter, voting);
       const tally = tallyVotes(v);
-      if (voting) {
-        let top: PlayerId | null = null;
-        let most = 0;
-        for (const [id, w] of tally) if (w > most) [top, most] = [id, w];
-        meterFill.style.width = `${Math.min(100, (most / Math.max(1, v.voteThreshold)) * 100)}%`;
-        setText(
-          meterLabel,
-          top ? `${nameOf(v, top)} ${most}/${v.voteThreshold}` : `0/${v.voteThreshold} votes`,
-        );
-      }
+      paintVote(Date.now() + skew);
 
       const key = `${pick.mode}|${pick.targets.join()}|${pick.chosen.join()}|${[...tally].join()}`;
       if (key !== targetsKey) {

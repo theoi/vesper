@@ -198,7 +198,7 @@ const SCENES: Scene[] = [
       variant: 'quiet',
       quiet: 'birds',
       deaths: [],
-      notes: [{ text: 'A hand closed around your candle', tone: 'town' }],
+      notes: [{ text: 'Attacked in the night, but a Mender saved your life', tone: 'town' }],
       day: 3,
     },
   },

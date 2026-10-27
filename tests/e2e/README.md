@@ -16,6 +16,6 @@ Multi-browser Playwright tests. `npm run e2e` builds and serves the site locally
 
 `support/harness.ts` opens isolated browser contexts per player with network recording on (pass `{ serviceWorkers: 'block' }` to `openPlayer` when a test intercepts or counts the page's requests, as the Claude and relay specs do, since Playwright can't see requests a service worker answers), and reads back each page's received messages and the host's secrets for audits. UI hooks are listed in `src/app/README.md`.
 
-`UI=v2` runs a suite against the new UI (`?ui=v2`); the harness fails if the page fell back to the shell. `UI=shell` pins the placeholder shell.
+Suites run against the default game UI: pages open without `?ui`, as players' do, and the harness fails if a page fell back to the shell. `UI=shell` runs a suite against the fallback shell (`?ui=shell`).
 
 Example: `E2E_BASE_URL=https://theoi.github.io/vesper/ npx playwright test --grep @online`
