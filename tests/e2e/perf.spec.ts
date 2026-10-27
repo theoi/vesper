@@ -7,28 +7,30 @@ import { closeAll, hostRoom, openPlayer } from './support/harness.ts';
 // Default headless composites in software, like a browser without GPU
 // compositing; don't add --use-angle=swiftshader here, it hides that cost.
 //   npx playwright test --grep @perf
-// PERF_MAX_BUSY_PCT overrides the budget. Results land in test-results/perf-*.json.
+// PERF_MAX_BUSY_PCT and PERF_MAX_SEQUENCE_PCT override the budgets. Each
+// test attaches its numbers as JSON and prints them as E2E-PERF.
 
-const BUDGET_PCT = Number(process.env.PERF_MAX_BUSY_PCT ?? 30);
+/** Resting in the day or at night, which is most of a game. */
+const REST_BUDGET_PCT = Number(process.env.PERF_MAX_BUSY_PCT ?? 30);
+/** While a sequence plays (a few seconds each). */
+const SEQUENCE_BUDGET_PCT = Number(process.env.PERF_MAX_SEQUENCE_PCT ?? 50);
 /** Each state needs this much measured time before the game may stop. */
 const MIN_MS = 4000;
 const DEADLINE_MS = 150_000;
 
 type Bucket = 'day' | 'night' | 'sequence';
 
-/** What the stage is doing: a sequence playing, or the phase it rests in. */
-async function stageState(page: Page): Promise<Bucket | null> {
+/** What the stage is doing: a sequence playing (and which), or the phase it rests in. */
+async function stageState(page: Page): Promise<{ bucket: Bucket | null; sequence?: string }> {
   const s = await page.evaluate(() => {
-    const stage = document.querySelector<HTMLElement>('.vs-stage');
-    return stage
-      ? { phase: stage.dataset.phase, playing: stage.classList.contains('playing') }
-      : null;
+    const stage = document.querySelector<HTMLElement>('[data-testid="stage"]');
+    return stage ? { phase: stage.dataset.phase, sequence: stage.dataset.sequence } : null;
   });
-  if (!s) return null;
-  if (s.playing) return 'sequence';
-  if (s.phase === 'discussion') return 'day';
-  if (s.phase === 'night') return 'night';
-  return null;
+  if (!s) return { bucket: null };
+  if (s.sequence) return { bucket: 'sequence', sequence: s.sequence };
+  if (s.phase === 'discussion') return { bucket: 'day' };
+  if (s.phase === 'night') return { bucket: 'night' };
+  return { bucket: null };
 }
 
 async function mainThread(cdp: CDPSession): Promise<{ at: number; busy: number }> {
@@ -53,12 +55,18 @@ for (const motion of ['no-preference', 'reduce'] as const) {
 
       const cdp = await me.page.context().newCDPSession(me.page);
       await cdp.send('Performance.enable');
-      const spent: Record<Bucket, { wall: number; busy: number }> = {
-        day: { wall: 0, busy: 0 },
-        night: { wall: 0, busy: 0 },
-        sequence: { wall: 0, busy: 0 },
+      // Keyed by bucket, and by sequence id for the per-sequence breakdown.
+      const spent = new Map<string, { wall: number; busy: number }>();
+      const add = (key: string, wall: number, busy: number) => {
+        const s = spent.get(key) ?? { wall: 0, busy: 0 };
+        spent.set(key, { wall: s.wall + wall, busy: s.busy + busy });
       };
-      const enough = () => Object.values(spent).every((b) => b.wall >= MIN_MS);
+      const measured = (key: string) => spent.get(key)?.wall ?? 0;
+      // Run through the whole first dawn too: it stages the night's deaths.
+      const enough = () =>
+        (['day', 'night', 'sequence'] as const).every((k) => measured(k) >= MIN_MS) &&
+        measured('dawn') > 0 &&
+        state.sequence !== 'dawn';
       const start = Date.now();
       let state = await stageState(me.page);
       let last = await mainThread(cdp);
@@ -67,33 +75,44 @@ for (const motion of ['no-preference', 'reduce'] as const) {
         const now = await mainThread(cdp);
         const next = await stageState(me.page);
         // Count only intervals that started and ended in the same state.
-        if (state && state === next) {
-          spent[state].wall += now.at - last.at;
-          spent[state].busy += now.busy - last.busy;
+        if (state.bucket && state.bucket === next.bucket && state.sequence === next.sequence) {
+          add(state.bucket, now.at - last.at, now.busy - last.busy);
+          if (state.sequence) add(state.sequence, now.at - last.at, now.busy - last.busy);
         }
         state = next;
         last = now;
         if (await me.page.getByTestId('result').isVisible()) break;
       }
 
-      const report = Object.fromEntries(
-        Object.entries(spent).map(([k, b]) => [
-          k,
-          {
-            busyPct: Math.round((b.busy / Math.max(1, b.wall)) * 1000) / 10,
-            measuredMs: Math.round(b.wall),
-          },
-        ]),
-      ) as Record<Bucket, { busyPct: number; measuredMs: number }>;
-      const summary = { motion, budgetPct: BUDGET_PCT, ...report };
+      const pct = (key: string) => {
+        const s = spent.get(key) ?? { wall: 0, busy: 0 };
+        return Math.round((s.busy / Math.max(1, s.wall)) * 1000) / 10;
+      };
+      const row = (key: string) => ({ busyPct: pct(key), measuredMs: Math.round(measured(key)) });
+      const summary = {
+        motion,
+        budgetPct: { rest: REST_BUDGET_PCT, sequence: SEQUENCE_BUDGET_PCT },
+        day: row('day'),
+        night: row('night'),
+        sequence: row('sequence'),
+        bySequence: Object.fromEntries(
+          [...spent.keys()]
+            .filter((k) => !['day', 'night', 'sequence'].includes(k))
+            .map((k) => [k, row(k)]),
+        ),
+      };
       console.log(`E2E-PERF ${JSON.stringify(summary)}`);
       await testInfo.attach(`perf-${motion}.json`, {
         body: JSON.stringify(summary, null, 1),
         contentType: 'application/json',
       });
-      for (const [k, r] of Object.entries(report)) {
-        expect(r.measuredMs, `${k}: not enough time measured`).toBeGreaterThanOrEqual(MIN_MS / 2);
-        expect(r.busyPct, `${k}: main thread busy %`).toBeLessThanOrEqual(BUDGET_PCT);
+      for (const [k, budget] of [
+        ['day', REST_BUDGET_PCT],
+        ['night', REST_BUDGET_PCT],
+        ['sequence', SEQUENCE_BUDGET_PCT],
+      ] as const) {
+        expect(measured(k), `${k}: not enough time measured`).toBeGreaterThanOrEqual(MIN_MS / 2);
+        expect(pct(k), `${k}: main thread busy %`).toBeLessThanOrEqual(budget);
       }
       expect(me.errors).toEqual([]);
     } finally {
